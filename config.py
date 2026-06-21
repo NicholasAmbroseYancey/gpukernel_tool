@@ -1,0 +1,9 @@
+"""Runtime tuning defaults for benchmarking and autotune."""
+
+DEFAULT_N = 1 << 20
+VERIFY_N = 1024
+DEFAULT_BLOCK_SIZE = 256
+BLOCK_SIZE_CANDIDATES = [64, 128, 256, 512, 1024]
+
+BENCHMARK_WARMUP = 5
+BENCHMARK_REPEATS = 25

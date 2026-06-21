@@ -1,0 +1,20 @@
+/.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.mypy_cache/
+.vscode/
+.env
+local_config.py
+/.idea/
+*.swp
+/.DS_Store
+
+# Kernel and build artifacts
+build/
+dist/
+*.egg-info/
