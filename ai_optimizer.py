@@ -29,6 +29,31 @@ class AICompilerResult:
     multi: bool = False
 
 
+# A candidate must beat the current best by more than this relative
+# margin to be accepted as an "improvement." Without this, the loop
+# chases ordinary benchmark jitter instead of real speedups.
+NOISE_MARGIN = 0.02  # 2%
+
+
+def classify_candidate(
+    candidate_ms: float,
+    best_ms: float,
+    margin: float = NOISE_MARGIN,
+) -> str:
+    """Classify a candidate benchmark time against the current best.
+
+    Returns "improved" (beats best by more than `margin`, relative),
+    "within_margin" (faster than best, but not by enough to count),
+    or "no_improvement" (not faster than best at all).
+    """
+    threshold = best_ms * (1 - margin)
+    if candidate_ms < threshold:
+        return "improved"
+    if candidate_ms < best_ms:
+        return "within_margin"
+    return "no_improvement"
+
+
 def apply_plan(source: str, plan: OptimizerPlan) -> tuple[str, str]:
     resolved = plan.resolved_source(source)
     if plan.program or is_multi_output(resolved):
@@ -106,7 +131,9 @@ def run_ai_compiler(
             autotune=autotune and plan.block_size is None,
             block_size=plan.block_size,
         )
-        if candidate_bench.triton_ms < best_benchmark.triton_ms:
+        improvement_threshold = best_benchmark.triton_ms * (1 - NOISE_MARGIN)
+        verdict = classify_candidate(candidate_bench.triton_ms, best_benchmark.triton_ms)
+        if verdict == "improved":
             print(
                 f"  improved: {best_benchmark.triton_ms:.4f} ms -> "
                 f"{candidate_bench.triton_ms:.4f} ms "
@@ -116,6 +143,12 @@ def run_ai_compiler(
             best_code = candidate_code
             best_benchmark = candidate_bench
             best_block_size = candidate_bench.block_size
+        elif verdict == "within_margin":
+            print(
+                f"  within noise margin: {candidate_bench.triton_ms:.4f} ms "
+                f"(best {best_benchmark.triton_ms:.4f} ms, "
+                f"needs < {improvement_threshold:.4f} ms to count)"
+            )
         else:
             print(
                 f"  no improvement: {candidate_bench.triton_ms:.4f} ms "
