@@ -2,21 +2,73 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  # Fast tier: every push/PR, GitHub-hosted, no GPU. CPU-only torch and no
+  # Triton, which also proves the mocked suite never needs a GPU.
+  fast:
+    name: Fast tests (no GPU, py${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-      - name: Install dependencies
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install CPU-only dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Run tests
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy requests matplotlib pytest
+      - name: Run mocked test suite
+        run: python -m pytest -m "not gpu" -rxXs
+      - name: Tests must not modify the working tree
+        run: git status --porcelain && test -z "$(git status --porcelain)"
+
+  # GPU tier: real CUDA + Triton on the team's self-hosted runner. Runs only
+  # after the fast tier passes, only when the runner is switched on
+  # (repo variable GPU_RUNNER_ENABLED=true), and never for fork PRs, since
+  # this repo is public and fork code would execute on the GPU host.
+  gpu:
+    name: GPU tests (CUDA + Triton)
+    needs: fast
+    if: >-
+      vars.GPU_RUNNER_ENABLED == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 30
+    concurrency:
+      group: gpu-runner
+      cancel-in-progress: false
+    env:
+      REQUIRE_GPU: "1"
+      VENV: ${{ github.workspace }}/../.kernelforge-ci-venv
+    steps:
+      - uses: actions/checkout@v4
+      - name: GPU info
+        run: nvidia-smi
+      - name: Set up persistent venv
         run: |
-          python -m pytest -q
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install --upgrade pip
+          "$VENV/bin/pip" install -r requirements.txt
+          "$VENV/bin/python" -c "import torch, triton; print('torch', torch.__version__, 'cuda', torch.version.cuda, 'triton', triton.__version__)"
+      - name: Run full test suite (mocked + GPU)
+        run: '"$VENV/bin/python" -m pytest -rxXs --durations=10'

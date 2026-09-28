@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 from compiler import compile_expression, compile_program, is_multi_output
 from feedback import FailureFeedback
 from kernel_gen import generate_kernel_from_expr
 from kernel_lint import extract_output_expr
 from kernel_writer import clean_output, save_kernel_source
-from ollama_client import generate
+from ollama_client import OllamaError, generate
 from parser import ParseError, parse_expression
 from prompt_builder import fix_prompt
 from run_kernel import build_feedback, lint_code, run
@@ -90,29 +91,15 @@ def run_pipeline(source: str, *, max_attempts: int = 3, use_llm: bool = True) ->
     triton_override: str | None = None
     kernel_code = ""
     last_feedback: FailureFeedback | None = None
+    # False after the LLM's reply was rejected: nothing new to build, so the
+    # next attempt goes straight back to the LLM.
+    needs_build = True
 
     for attempt in range(1, max_attempts + 1):
-        if triton_override is None:
+        if needs_build:
             try:
-                current_expression, kernel_code = build_kernel(current_expression)
+                current_expression, kernel_code = build_kernel(current_expression, triton_override)
             except (ParseError, ValueError) as e:
-                last_feedback = FailureFeedback(
-                    stage="compile",
-                    message=str(e),
-                    expression=current_expression,
-                    kernel_code=kernel_code,
-                )
-                if not use_llm or attempt == max_attempts:
-                    break
-                current_expression, triton_override = _llm_fix(last_feedback)
-                continue
-        else:
-            try:
-                current_expression, kernel_code = build_kernel(
-                    current_expression,
-                    triton_override,
-                )
-            except ValueError as e:
                 last_feedback = FailureFeedback(
                     stage="compile",
                     message=str(e),
@@ -120,27 +107,37 @@ def run_pipeline(source: str, *, max_attempts: int = 3, use_llm: bool = True) ->
                     kernel_code=kernel_code,
                     output_expr=triton_override,
                 )
-                if not use_llm or attempt == max_attempts:
-                    break
-                current_expression, triton_override = _llm_fix(last_feedback)
-                continue
+            else:
+                ok, last_feedback = execute_attempt(current_expression, kernel_code)
+                if ok:
+                    return PipelineResult(
+                        success=True,
+                        expression=current_expression,
+                        kernel_code=kernel_code,
+                        attempts=attempt,
+                        multi=multi,
+                    )
+                print(f"Attempt {attempt} failed: {last_feedback.brief()}")
+            triton_override = None
 
-        ok, last_feedback = execute_attempt(current_expression, kernel_code)
-        triton_override = None
-        if ok:
-            return PipelineResult(
-                success=True,
-                expression=current_expression,
-                kernel_code=kernel_code,
-                attempts=attempt,
-                multi=multi,
-            )
-
-        print(f"Attempt {attempt} failed: {last_feedback.brief()}")
+        needs_build = True
         if not use_llm or attempt == max_attempts:
             break
 
-        current_expression, triton_override = _llm_fix(last_feedback)
+        try:
+            current_expression, triton_override = _llm_fix(last_feedback)
+        except OllamaError as e:
+            print(f"LLM unavailable, stopping: {e}")
+            break
+        except (ParseError, ValueError) as e:
+            # The LLM must be treated as adversarial input: a chatty or
+            # malformed reply costs an attempt but never crashes the loop.
+            print(f"LLM fix rejected: {e}")
+            last_feedback = replace(
+                last_feedback,
+                message=f"{last_feedback.message}\nprevious_fix_rejected: {e}",
+            )
+            needs_build = False
 
     return PipelineResult(
         success=False,
@@ -153,12 +150,22 @@ def run_pipeline(source: str, *, max_attempts: int = 3, use_llm: bool = True) ->
 
 
 def _llm_fix(feedback: FailureFeedback) -> tuple[str, str | None]:
+    """Ask the LLM for a fix.
+
+    Raises OllamaError if the LLM is unreachable, and ParseError/ValueError
+    if its reply is not a usable fix.
+    """
     response = generate(fix_prompt(feedback))
     kind, value = parse_llm_fix(response)
     print(f"LLM fix ({kind}): {value}")
 
     if kind == "triton":
+        if not value:
+            raise ValueError("empty TRITON: fix")
         return feedback.expression, value
 
-    parse_expression(value)
+    try:
+        parse_expression(value)
+    except ParseError as e:
+        raise ParseError(f"reply {value!r} is not a valid expression: {e}") from e
     return value, None
