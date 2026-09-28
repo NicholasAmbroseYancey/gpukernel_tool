@@ -124,6 +124,7 @@ class TestLLMIsAdversarial(unittest.TestCase):
         self.assertEqual(result.last_feedback.stage, "compile")
 
 
+@patch.dict("os.environ", {"TRITON_INTERPRET": "0"})
 @patch("torch.cuda.is_available", return_value=False)
 class TestWithoutCuda(unittest.TestCase):
     def test_run_reports_runtime_failure(self, _):

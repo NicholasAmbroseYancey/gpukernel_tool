@@ -1,12 +1,16 @@
-"""Shared pytest setup for the fast (mocked) and GPU test tiers.
+"""Shared pytest setup.
 
-- Tests marked ``gpu`` are skipped when CUDA is unavailable. Set
-  ``REQUIRE_GPU=1`` (the GPU CI job does) to abort the run instead, so a
-  broken driver can't turn the GPU job green by skipping everything.
-- Every test runs in its own temp working directory, because the pipeline
-  writes ``kernels/kernel.py`` and ``reports/`` relative to the cwd.
-- The Ollama client's network calls are disabled unless a test mocks them,
-  so a missing mock fails fast instead of hanging on retries.
+Test tiers:
+- unmarked: mocked, run anywhere (no GPU, Triton, or Ollama).
+- ``kernel``: compile and run real Triton kernels, checked against PyTorch.
+  They run on a CUDA GPU, or on the CPU with ``TRITON_INTERPRET=1`` (what CI
+  does); otherwise they're skipped.
+- ``gpu``: benchmarks, which need a real CUDA GPU and are skipped otherwise.
+
+Every test also runs in its own temp working directory, because the pipeline
+writes ``kernels/kernel.py`` and ``reports/`` relative to the cwd, and the
+Ollama client's network calls are disabled unless a test mocks them, so a
+missing mock fails fast instead of hanging on retries.
 """
 
 from __future__ import annotations
@@ -25,14 +29,14 @@ def _cuda_available() -> bool:
 
 
 def pytest_collection_modifyitems(config, items):
-    gpu_items = [item for item in items if "gpu" in item.keywords]
-    if not gpu_items or _cuda_available():
-        return
-    if os.getenv("REQUIRE_GPU") == "1":
-        pytest.exit("REQUIRE_GPU=1 but torch.cuda.is_available() is False", returncode=1)
-    skip = pytest.mark.skip(reason="CUDA not available")
-    for item in gpu_items:
-        item.add_marker(skip)
+    interpret = os.getenv("TRITON_INTERPRET") == "1"
+    real_gpu = _cuda_available() and not interpret
+    can_run_kernels = interpret or real_gpu
+    for item in items:
+        if "gpu" in item.keywords and not real_gpu:
+            item.add_marker(pytest.mark.skip(reason="needs a real CUDA GPU"))
+        elif "kernel" in item.keywords and not can_run_kernels:
+            item.add_marker(pytest.mark.skip(reason="no CUDA; set TRITON_INTERPRET=1 to run on CPU"))
 
 
 @pytest.fixture(autouse=True)

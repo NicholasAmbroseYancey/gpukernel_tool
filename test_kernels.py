@@ -1,7 +1,7 @@
-"""End-to-end tests on a real CUDA GPU: compile → launch Triton → verify vs PyTorch.
+"""End-to-end kernel tests: compile → launch Triton → verify vs PyTorch.
 
-Skipped without CUDA; run on the GPU CI host with REQUIRE_GPU=1 so they
-can't silently skip there.
+Runs on a CUDA GPU, or on the CPU with TRITON_INTERPRET=1 (as in CI).
+Benchmark tests are marked ``gpu`` and need a real GPU.
 """
 
 import pytest
@@ -12,7 +12,7 @@ from kernel_writer import save_kernel_source
 from pipeline import compile_from_source, run_pipeline
 from run_kernel import run
 
-pytestmark = pytest.mark.gpu
+pytestmark = pytest.mark.kernel
 
 # Inputs are randn, so log/sqrt get abs(...) to stay in-domain.
 SINGLE_EXPRESSIONS = [
@@ -79,6 +79,7 @@ def test_verify_correctness_across_block_sizes(block_size):
     assert verify_correctness("x * y + sin(x)", n=1000, block_size=block_size)
 
 
+@pytest.mark.gpu
 @pytest.mark.parametrize("source", ["x * y + sin(x)", "out0 = x * y; out1 = x + y"])
 def test_benchmark_produces_sane_report(source):
     _, code = compile_from_source(source)

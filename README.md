@@ -113,39 +113,39 @@ Run the test suite with pytest:
 python -m pytest -q
 ```
 
-Tests come in two tiers:
+Tests come in three tiers:
 
-- **Fast (mocked):** `python -m pytest -m "not gpu"`. No GPU, Triton, or Ollama needed; the LLM,
+- **Unit (mocked):** `python -m pytest -m "not kernel and not gpu"`. No GPU, Triton, or Ollama needed; the LLM,
   benchmarks, and CUDA checks are mocked. Network calls from `ollama_client` are blocked in tests.
-- **GPU:** tests marked `gpu` (`test_gpu.py`) compile real Triton kernels, launch them, and verify
-  against PyTorch. They are skipped without CUDA; with `REQUIRE_GPU=1` the run aborts instead.
+- **Kernel:** tests marked `kernel` (`test_kernels.py`) compile real Triton kernels, run them, and verify against
+  PyTorch. They run on a CUDA GPU, or on the CPU with Triton's interpreter:
 
-Every test runs in a temp working directory, so `kernels/kernel.py` and `reports/` in the repo are never touched.
-Known bugs are tracked as `xfail(strict=True)` tests: when one gets fixed, the test fails until its marker is removed.
+  ```bash
+  TRITON_INTERPRET=1 python -m pytest -m kernel
+  ```
+
+  The interpreter checks correctness, not speed.
+- **GPU:** benchmarks marked `gpu`. They need a real CUDA GPU: `python -m pytest -m gpu`.
+
+Tiers that can't run on the current machine are skipped. Every test runs in a temp working directory, so
+`kernels/kernel.py` and `reports/` in the repo are never touched.
+
+`TRITON_INTERPRET=1` also works for the CLI (`python main.py --no-llm`), so teammates without an NVIDIA GPU can
+compile and verify kernels. Benchmarking still needs a real GPU.
 
 Continuous integration
 ----------------------
-`.github/workflows/ci.yml` runs on every PR and every push to `main`:
+`.github/workflows/ci.yml` runs on every PR and every push to `main`, on GitHub's free runners (no GPU):
 
-1. **fast**: GitHub-hosted Ubuntu, Python 3.10 and 3.12, CPU-only torch and no Triton. It also fails if
-   tests leave the working tree dirty.
-2. **gpu**: the full suite with `REQUIRE_GPU=1` on a self-hosted runner. It runs only after `fast` passes and never
-   for PRs from forks (the repo is public, and fork code would run on the GPU host).
+1. **unit**: the mocked tests on Python 3.10 and 3.12, with CPU-only torch and no Triton.
+2. **kernels**: the kernel tests on the CPU via `TRITON_INTERPRET=1`.
 
-To enable the GPU job:
-
-1. On the GPU machine (Linux/WSL2 with an NVIDIA driver and Python 3.10+), register a runner under
-   repo Settings → Actions → Runners → New self-hosted runner. Add the label `gpu`.
-2. Run it as a service (`sudo ./svc.sh install && sudo ./svc.sh start`) so it survives reboots.
-3. Set the repository variable `GPU_RUNNER_ENABLED=true` (Settings → Secrets and variables → Actions →
-   Variables). Until then the GPU job is skipped rather than queued forever.
-4. Under Settings → Actions → General, set "Require approval for all outside collaborators" on fork PR workflows.
-
-The runner keeps a persistent venv next to its workspace, so torch and Triton are only downloaded once.
+Both jobs also fail if tests leave the working tree dirty. Benchmarks aren't run in CI; run
+`python -m pytest -m gpu` on a machine with a GPU when you change performance-related code.
 
 Notes & Troubleshooting
 -----------------------
-- CUDA must be available to run kernels and verification. Many modules return helpful RunResult objects when CUDA is missing.
+- CUDA (or `TRITON_INTERPRET=1` for CPU) must be available to run kernels and verification. Many modules return helpful RunResult objects when CUDA is missing.
 - If using LLM features, ensure an Ollama-compatible API is reachable at the URL in `ollama_client.py`.
 - Generated kernels are saved to the `kernels/` folder (`kernels/kernel.py`).
 

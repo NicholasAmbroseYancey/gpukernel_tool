@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 
 import torch
 
@@ -20,14 +21,32 @@ def load_kernel():
     return mod.kernel
 
 
-def make_single_tensors(n: int = DEFAULT_N, *, device: str = "cuda"):
+def kernel_device() -> str | None:
+    """Device to run Triton kernels on, or None if they can't run here.
+
+    With TRITON_INTERPRET=1, Triton runs kernels on the CPU, which checks
+    correctness (not speed) on machines without a GPU, such as CI.
+    """
+    if os.getenv("TRITON_INTERPRET") == "1":
+        return "cpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    return None
+
+
+NO_DEVICE_MESSAGE = "CUDA is not available (set TRITON_INTERPRET=1 to run kernels on the CPU)"
+
+
+def make_single_tensors(n: int = DEFAULT_N, *, device: str | None = None):
+    device = device or kernel_device()
     x = torch.randn(n, device=device, dtype=torch.float32)
     y = torch.randn(n, device=device, dtype=torch.float32)
     out = torch.zeros(n, device=device, dtype=torch.float32)
     return x, y, out
 
 
-def make_multi_tensors(source: str, n: int = DEFAULT_N, *, device: str = "cuda"):
+def make_multi_tensors(source: str, n: int = DEFAULT_N, *, device: str | None = None):
+    device = device or kernel_device()
     _, program = compile_program(source)
     x = torch.randn(n, device=device, dtype=torch.float32)
     y = torch.randn(n, device=device, dtype=torch.float32)
@@ -77,8 +96,8 @@ def launch_expression(
     n: int = VERIFY_N,
     block_size: int = DEFAULT_BLOCK_SIZE,
 ) -> None:
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available")
+    if kernel_device() is None:
+        raise RuntimeError(NO_DEVICE_MESSAGE)
 
     kernel = load_kernel()
     if is_multi_output(source):
