@@ -35,12 +35,21 @@ SINGLE_EXPRESSIONS = [
     "log(exp(x))",
     "max(x, y)",
     "min(x, 1) + max(sin(x), y)",
+    "x ** 2",
+    "x ^ 3 - y",
+    "(abs(x) + 1) ** -2",
+    "abs(x) ** 0.5",
+    "(abs(x) + 1) ** -0.5",
+    "pow(abs(x) + 1, 1.5)",
+    "(abs(x) + 0.5) ** y",
+    "x ** (y * 0 + 3)",
 ]
 
 MULTI_PROGRAMS = [
     "out0 = x * y; out1 = x + y",
     "out0 = x * y\nout1 = x + y\nout2 = x * y + sin(x)",
     "x * y; relu(x); exp(y) - 1",
+    "out0 = x ** 2; out1 = (abs(x) + 1) ** y",
 ]
 
 

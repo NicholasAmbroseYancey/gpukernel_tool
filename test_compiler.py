@@ -72,6 +72,25 @@ class TestKernelGen(unittest.TestCase):
         expr = IRCall("sin", (IRVar("x"),))
         self.assertEqual(emit_triton(expr), "tl.sin(x)")
 
+    def test_small_integer_powers_expand_to_multiplication(self):
+        self.assertEqual(emit_triton(ast_to_ir(parse_expression("x ** 3")).output), "(x * x * x)")
+        self.assertEqual(emit_triton(ast_to_ir(parse_expression("x ** -2")).output), "(1.0 / (x * x))")
+        self.assertEqual(emit_triton(ast_to_ir(parse_expression("x ** 0")).output), "1.0")
+
+    def test_half_powers_use_sqrt(self):
+        self.assertEqual(emit_triton(ast_to_ir(parse_expression("x ** 0.5")).output), "tl.sqrt(x)")
+        self.assertEqual(emit_triton(ast_to_ir(parse_expression("x ** -0.5")).output), "tl.rsqrt(x)")
+
+    def test_general_power_includes_helper(self):
+        code, _ = compile_expression("x ** y")
+        self.assertIn("out = _gk_pow(x, y)", code)
+        self.assertIn("def _gk_pow(b, e):", code)
+        self.assertNotIn("tl.math.pow", code)
+
+    def test_helpers_only_included_when_called(self):
+        code, _ = compile_expression("x * y")
+        self.assertNotIn("_gk_", code)
+
     def test_emit_triton_multi_arg(self):
         expr = IRCall("max", (IRVar("x"), IRConst(1.0)))
         self.assertEqual(emit_triton(expr), "tl.maximum(x, 1)")
