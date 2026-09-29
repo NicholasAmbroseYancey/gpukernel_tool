@@ -5,6 +5,7 @@ import torch
 from compiler import compile_program, is_multi_output
 from feedback import DiffStats, FailureFeedback, LintIssue
 from kernel_lint import extract_output_expr, lint_kernel
+from launch import NO_DEVICE_MESSAGE, kernel_device
 from verify import check, check_multi, compute_diff, compute_multi_diff
 
 
@@ -60,20 +61,21 @@ def run(expression, *, kernel_code: str | None = None):
         if lint_result is not None:
             return lint_result
 
-    if not torch.cuda.is_available():
+    device = kernel_device()
+    if device is None:
         return RunResult(
             success=False,
             stage="runtime",
-            message="CUDA is not available",
+            message=NO_DEVICE_MESSAGE,
             exception_type="RuntimeError",
         )
 
     import triton
 
     n = 1024
-    x = torch.randn(n, device="cuda", dtype=torch.float32)
-    y = torch.randn(n, device="cuda", dtype=torch.float32)
-    out = torch.zeros(n, device="cuda", dtype=torch.float32)
+    x = torch.randn(n, device=device, dtype=torch.float32)
+    y = torch.randn(n, device=device, dtype=torch.float32)
+    out = torch.zeros(n, device=device, dtype=torch.float32)
 
     block_size = 256
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
@@ -115,11 +117,12 @@ def run_program(source: str, *, kernel_code: str | None = None):
         if lint_result is not None:
             return lint_result
 
-    if not torch.cuda.is_available():
+    device = kernel_device()
+    if device is None:
         return RunResult(
             success=False,
             stage="runtime",
-            message="CUDA is not available",
+            message=NO_DEVICE_MESSAGE,
             exception_type="RuntimeError",
         )
 
@@ -127,10 +130,10 @@ def run_program(source: str, *, kernel_code: str | None = None):
 
     _, program = compile_program(source)
     n = 1024
-    x = torch.randn(n, device="cuda", dtype=torch.float32)
-    y = torch.randn(n, device="cuda", dtype=torch.float32)
+    x = torch.randn(n, device=device, dtype=torch.float32)
+    y = torch.randn(n, device=device, dtype=torch.float32)
     outputs = {
-        assignment.name: torch.zeros(n, device="cuda", dtype=torch.float32)
+        assignment.name: torch.zeros(n, device=device, dtype=torch.float32)
         for assignment in program.outputs
     }
 

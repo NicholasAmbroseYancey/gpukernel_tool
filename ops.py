@@ -39,12 +39,13 @@ TRITON_BINOPS = {
 TRITON_FUNCS = {
     "sin": "tl.sin",
     "cos": "tl.cos",
-    "tan": "tl.tan",
+    # triton.language has no tan/tanh, so build them from ops it does have.
+    "tan": "(tl.sin({0}) / tl.cos({0}))",
     "exp": "tl.exp",
     "log": "tl.log",
     "sqrt": "tl.sqrt",
     "abs": "tl.abs",
-    "tanh": "tl.tanh",
+    "tanh": "(2.0 * tl.sigmoid(2.0 * ({0})) - 1.0)",
     "sigmoid": "tl.sigmoid",
     "relu": "tl.maximum(0.0, {0})",
 }
