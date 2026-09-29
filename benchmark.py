@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import torch
 
-from compiler import compile_program, is_multi_output
+from compiler import compile_program, is_multi_output, output_reduction
 from config import (
     BENCHMARK_REPEATS,
     BENCHMARK_WARMUP,
@@ -22,6 +22,7 @@ from launch import (
     launch_single,
     load_kernel,
     make_multi_tensors,
+    make_single_output,
     make_single_tensors,
 )
 from parser import parse_expression
@@ -147,7 +148,7 @@ def benchmark_triton(
         def run_kernel():
             launch_multi(kernel, x, y, outputs, program, block_size=block_size)
     else:
-        out = torch.zeros_like(x)
+        out = make_single_output(source, x.numel(), device=x.device)
 
         def run_kernel():
             launch_single(kernel, x, y, out, block_size=block_size)
@@ -209,11 +210,11 @@ def run_benchmark(
     multi = is_multi_output(source)
     if multi:
         x, y, outputs, program = make_multi_tensors(source, n=n)
-        num_outputs = len(program.outputs)
+        num_outputs = sum(out.numel() == n for out in outputs.values())
     else:
         x, y, _ = make_single_tensors(n=n)
         outputs = program = None
-        num_outputs = 1
+        num_outputs = int(output_reduction(source) is None)
 
     mem = estimate_memory(n, num_outputs=num_outputs)
 
@@ -228,7 +229,7 @@ def run_benchmark(
         if multi:
             launch_multi(kernel, x, y, outputs, program, block_size=block_size)
         else:
-            out = torch.zeros_like(x)
+            out = make_single_output(source, n, device=x.device)
             launch_single(kernel, x, y, out, block_size=block_size)
 
     mem.peak_bytes = max(mem.peak_bytes, _measure_peak(peak_launch))
@@ -375,6 +376,6 @@ def verify_correctness(source: str, *, n: int = 1024, block_size: int = DEFAULT_
         launch_multi(kernel, x, y, outputs, program, block_size=block_size)
         return check_multi(x, y, outputs, source)
 
-    x, y, out = make_single_tensors(n=n)
+    x, y, out = make_single_tensors(n=n, source=source)
     launch_single(kernel, x, y, out, block_size=block_size)
     return check(x, y, out, source)

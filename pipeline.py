@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
-from compiler import compile_expression, compile_program, is_multi_output
+from compiler import compile_expression, compile_program, is_multi_output, output_reduction
 from feedback import FailureFeedback
 from kernel_gen import generate_kernel_from_expr
 from kernel_lint import extract_output_expr
@@ -60,7 +60,7 @@ def compile_from_triton_expr(triton_expr: str, expression: str) -> tuple[str, st
     banned = ["numpy", "torch", "eval(", "exec("]
     if any(token in triton_expr for token in banned):
         raise ValueError("Triton fix contains banned tokens")
-    return expression, generate_kernel_from_expr(triton_expr)
+    return expression, generate_kernel_from_expr(triton_expr, reduce=output_reduction(expression))
 
 
 def build_kernel(expression: str, triton_expr: str | None = None) -> tuple[str, str]:

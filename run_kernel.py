@@ -2,10 +2,10 @@ import importlib.util
 
 import torch
 
-from compiler import compile_program, is_multi_output
+from compiler import is_multi_output
 from feedback import DiffStats, FailureFeedback, LintIssue
 from kernel_lint import extract_output_expr, lint_kernel
-from launch import NO_DEVICE_MESSAGE, kernel_device
+from launch import NO_DEVICE_MESSAGE, kernel_device, make_multi_tensors, make_single_output
 from verify import check, check_multi, compute_diff, compute_multi_diff
 
 
@@ -75,7 +75,7 @@ def run(expression, *, kernel_code: str | None = None):
     n = 1024
     x = torch.randn(n, device=device, dtype=torch.float32)
     y = torch.randn(n, device=device, dtype=torch.float32)
-    out = torch.zeros(n, device=device, dtype=torch.float32)
+    out = make_single_output(expression, n, device=device)
 
     block_size = 256
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)
@@ -128,14 +128,8 @@ def run_program(source: str, *, kernel_code: str | None = None):
 
     import triton
 
-    _, program = compile_program(source)
     n = 1024
-    x = torch.randn(n, device=device, dtype=torch.float32)
-    y = torch.randn(n, device=device, dtype=torch.float32)
-    outputs = {
-        assignment.name: torch.zeros(n, device=device, dtype=torch.float32)
-        for assignment in program.outputs
-    }
+    x, y, outputs, program = make_multi_tensors(source, n=n, device=device)
 
     block_size = 256
     grid = lambda meta: (triton.cdiv(n, meta["BLOCK_SIZE"]),)

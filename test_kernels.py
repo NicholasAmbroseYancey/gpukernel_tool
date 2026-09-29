@@ -13,8 +13,8 @@ import torch
 from benchmark import run_benchmark, verify_correctness
 from kernel_gen import generate_kernel_from_expr
 from kernel_writer import save_kernel_source
-from launch import kernel_device, launch_single, load_kernel, make_single_tensors
-from pipeline import compile_from_source, run_pipeline
+from launch import kernel_device, launch_single, load_kernel, make_single_output, make_single_tensors
+from pipeline import build_kernel, compile_from_source, run_pipeline
 from run_kernel import run
 
 pytestmark = pytest.mark.kernel
@@ -55,6 +55,10 @@ SINGLE_EXPRESSIONS = [
     "acos(sin(x)) - arcsin(cos(y))",
     "arctan2(sin(x), cos(y)) * arctan(y)",
     "asin(0.5) + x",
+    "sum(x * y)",
+    "max(x - y)",
+    "min(sin(x) + y)",
+    "sum(x ** 2)",
 ]
 
 MULTI_PROGRAMS = [
@@ -62,6 +66,7 @@ MULTI_PROGRAMS = [
     "out0 = x * y\nout1 = x + y\nout2 = x * y + sin(x)",
     "x * y; relu(x); exp(y) - 1",
     "out0 = x ** 2; out1 = (abs(x) + 1) ** y",
+    "out0 = x * y; out1 = sum(x * y); out2 = max(x * y)",
 ]
 
 
@@ -129,11 +134,28 @@ def test_asin_acos_full_domain():
 
 
 @pytest.mark.parametrize("block_size", [64, 256, 1024])
-def test_verify_correctness_across_block_sizes(block_size):
+@pytest.mark.parametrize("source", ["x * y + sin(x)", "sum(x * y)", "max(x)", "min(x)"])
+def test_verify_correctness_across_block_sizes(source, block_size):
     # n not a multiple of block_size exercises the tail mask.
-    _, code = compile_from_source("x * y + sin(x)")
+    _, code = compile_from_source(source)
     save_kernel_source(code)
-    assert verify_correctness("x * y + sin(x)", n=1000, block_size=block_size)
+    assert verify_correctness(source, n=1000, block_size=block_size)
+
+
+@pytest.mark.parametrize("source, expected", [("sum(x + 1)", -4000.0), ("max(x)", -5.0), ("min(-x)", 5.0)])
+def test_reduction_ignores_masked_lanes(source, expected):
+    x = torch.full((1000,), -5.0, device=kernel_device())
+    _, code = compile_from_source(source)
+    save_kernel_source(code)
+    out = make_single_output(source, x.numel(), device=x.device)
+    launch_single(load_kernel(), x, torch.zeros_like(x), out, block_size=256)
+    assert out.item() == expected
+
+
+def test_llm_triton_override_keeps_reduction():
+    _, code = build_kernel("sum(x * y)", triton_expr="x * y")
+    save_kernel_source(code)
+    assert verify_correctness("sum(x * y)")
 
 
 @pytest.mark.gpu
