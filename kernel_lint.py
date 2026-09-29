@@ -6,7 +6,6 @@ from feedback import LintIssue
 
 BASE_REQUIRED_TOKENS = [
     "tl.load",
-    "tl.store",
     "@triton.jit",
     "program_id",
     "offsets",
@@ -44,6 +43,8 @@ def lint_kernel(code: str) -> list[LintIssue]:
     for token in required:
         if token not in code:
             issues.append(LintIssue("missing_required", token))
+    if "tl.store" not in code and "tl.atomic_" not in code:
+        issues.append(LintIssue("missing_required", "tl.store"))
 
     for token in BANNED_TOKENS:
         if token in code:

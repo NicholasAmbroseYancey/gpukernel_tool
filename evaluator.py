@@ -14,11 +14,12 @@ from ir import (
     IRExpr,
     IRMultiProgram,
     IRProgram,
+    IRReduce,
     IRUnaryOp,
     IRVar,
     ast_to_ir,
 )
-from ops import TORCH_FUNCS
+from ops import TORCH_FUNCS, TORCH_REDUCTIONS
 
 
 def evaluate_ir(program: IRProgram, env: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -78,3 +79,5 @@ def _eval_expr(expr: IRExpr, env: dict[str, torch.Tensor]) -> torch.Tensor:
         case IRCall(func=func, args=args):
             fn = TORCH_FUNCS[func]
             return fn(*(_eval_expr(arg, env) for arg in args))
+        case IRReduce(op=op, arg=arg):
+            return TORCH_REDUCTIONS[op](_eval_expr(arg, env)).reshape(1)

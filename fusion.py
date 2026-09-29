@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from ir import IRExpr, IRBinOp, IRCall, IRConst, IRUnaryOp, IRVar, _depth
+from ir import IRExpr, IRBinOp, IRCall, IRConst, IRReduce, IRUnaryOp, IRVar, _depth
 
 
 def fuse_outputs(assignments: list[tuple[str, IRExpr]]) -> tuple[list[tuple[str, IRExpr]], list[tuple[str, IRExpr]]]:
@@ -12,6 +12,9 @@ def fuse_outputs(assignments: list[tuple[str, IRExpr]]) -> tuple[list[tuple[str,
 
     def count_subexprs(expr: IRExpr) -> None:
         if isinstance(expr, (IRVar, IRConst)):
+            return
+        if isinstance(expr, IRReduce):
+            count_subexprs(expr.arg)
             return
         counts[expr] += 1
         match expr:
@@ -47,6 +50,8 @@ def fuse_outputs(assignments: list[tuple[str, IRExpr]]) -> tuple[list[tuple[str,
                 return IRUnaryOp(op, substitute(operand))
             case IRCall(func=func, args=args):
                 return IRCall(func, tuple(substitute(arg) for arg in args))
+            case IRReduce(op=op, arg=arg):
+                return IRReduce(op, substitute(arg))
             case _:
                 return expr
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from compiler import compile_expression, compile_program, is_multi_output
-from ir import IRBinOp, IRCall, IRConst, IRExpr, IRUnaryOp, IRVar, expr_to_ir
+from ir import IRBinOp, IRCall, IRConst, IRExpr, IRReduce, IRUnaryOp, IRVar, expr_to_ir
 from parser import parse_expression
 
 
@@ -57,6 +57,9 @@ def _count_ops(expr: IRExpr, op_counts: Counter[str], func_counts: Counter[str])
             func_counts[func] += 1
             for arg in args:
                 _count_ops(arg, op_counts, func_counts)
+        case IRReduce(op=op, arg=arg):
+            func_counts[f"{op}(reduce)"] += 1
+            _count_ops(arg, op_counts, func_counts)
         case _:
             return
 
@@ -71,6 +74,8 @@ def _depth(expr: IRExpr) -> int:
             return 1 + _depth(operand)
         case IRCall(args=args):
             return 1 + max((_depth(arg) for arg in args), default=0)
+        case IRReduce(arg=arg):
+            return 1 + _depth(arg)
 
 
 def _brief(expr: IRExpr) -> str:
@@ -85,3 +90,5 @@ def _brief(expr: IRExpr) -> str:
             return f"({op}{_brief(operand)})"
         case IRCall(func=func, args=args):
             return f"{func}({', '.join(_brief(arg) for arg in args)})"
+        case IRReduce(op=op, arg=arg):
+            return f"{op}({_brief(arg)})"

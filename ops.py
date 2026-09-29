@@ -31,6 +31,14 @@ FUNC_ARITY = {
     "atan2": 2,
 }
 
+REDUCTIONS = frozenset({"sum", "max", "min"})
+
+REDUCTION_IDENTITY = {
+    "sum": 0.0,
+    "max": -math.inf,
+    "min": math.inf,
+}
+
 FUNC_ALIASES = {
     "ln": "log",
     "tg": "tan",
@@ -80,6 +88,12 @@ TRITON_FUNCS = {
     "atan2": "_gk_atan2",
 }
 
+TRITON_REDUCTIONS = {
+    "sum": ("tl.sum", "tl.atomic_add"),
+    "max": ("tl.max", "tl.atomic_max"),
+    "min": ("tl.min", "tl.atomic_min"),
+}
+
 TORCH_FUNCS = {
     "sin": torch.sin,
     "cos": torch.cos,
@@ -97,6 +111,12 @@ TORCH_FUNCS = {
     "acos": torch.acos,
     "atan": torch.atan,
     "atan2": torch.atan2,
+}
+
+TORCH_REDUCTIONS = {
+    "sum": torch.sum,
+    "max": torch.amax,
+    "min": torch.amin,
 }
 
 MATH_FUNCS = {
@@ -121,6 +141,10 @@ def normalize_func(name: str) -> str:
 
 def is_allowed_func(name: str) -> bool:
     return normalize_func(name) in ALLOWED_FUNCS
+
+
+def is_reduction_call(name: str, arg_count: int) -> bool:
+    return normalize_func(name) in REDUCTIONS and arg_count == 1
 
 
 def is_allowed_var(name: str) -> bool:
