@@ -113,39 +113,9 @@ Run the test suite with pytest:
 python -m pytest -q
 ```
 
-Tests come in three tiers:
-
-- **Unit (mocked):** `python -m pytest -m "not kernel and not gpu"`. No GPU, Triton, or Ollama needed; the LLM,
-  benchmarks, and CUDA checks are mocked. Network calls from `ollama_client` are blocked in tests.
-- **Kernel:** tests marked `kernel` (`test_kernels.py`) compile real Triton kernels, run them, and verify against
-  PyTorch. They run on a CUDA GPU, or on the CPU with Triton's interpreter:
-
-  ```bash
-  TRITON_INTERPRET=1 python -m pytest -m kernel
-  ```
-
-  The interpreter checks correctness, not speed.
-- **GPU:** benchmarks marked `gpu`. They need a real CUDA GPU: `python -m pytest -m gpu`.
-
-Tiers that can't run on the current machine are skipped. Every test runs in a temp working directory, so
-`kernels/kernel.py` and `reports/` in the repo are never touched.
-
-`TRITON_INTERPRET=1` also works for the CLI (`python main.py --no-llm`), so teammates without an NVIDIA GPU can
-compile and verify kernels. Benchmarking still needs a real GPU.
-
-Continuous integration
-----------------------
-`.github/workflows/ci.yml` runs on every PR and every push to `main`, on GitHub's free runners (no GPU):
-
-1. **unit**: the mocked tests on Python 3.10 and 3.12, with CPU-only torch and no Triton.
-2. **kernels**: the kernel tests on the CPU via `TRITON_INTERPRET=1`.
-
-Both jobs also fail if tests leave the working tree dirty. Benchmarks aren't run in CI; run
-`python -m pytest -m gpu` on a machine with a GPU when you change performance-related code.
-
 Notes & Troubleshooting
 -----------------------
-- CUDA (or `TRITON_INTERPRET=1` for CPU) must be available to run kernels and verification. Many modules return helpful RunResult objects when CUDA is missing.
+- CUDA must be available to run kernels and verification. Many modules return helpful RunResult objects when CUDA is missing.
 - If using LLM features, ensure an Ollama-compatible API is reachable at the URL in `ollama_client.py`.
 - Generated kernels are saved to the `kernels/` folder (`kernels/kernel.py`).
 

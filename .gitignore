@@ -18,7 +18,3 @@ local_config.py
 build/
 dist/
 *.egg-info/
-
-# Benchmark output
-reports/
-reports_test/

@@ -1,0 +1,12 @@
+Generated: 2026-06-20T20:50:37
+Source: x * y
+Mode: single-output
+n=1,024  block_size=256
+triton=0.5000 ms  pytorch=1.0000 ms  speedup=2.00x
+memory: io=0.00 MB, peak=0.00 MB, read=0.00 MB, write=0.00 MB
+throughput: 2.05 Melem/s
+autotune best: block_size=256 (0.5000 ms)
+
+BLOCK_SIZE sweep:
+  block_size= 128  median=0.6000 ms  throughput=1.70 Melem/s
+  block_size= 256  median=0.5000 ms  throughput=2.00 Melem/s

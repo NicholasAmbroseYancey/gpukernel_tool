@@ -8,7 +8,7 @@ from benchmark import BenchmarkReport, run_benchmark, verify_correctness
 from compiler import compile_expression, compile_program, is_multi_output
 from ir_analysis import analyze_source
 from kernel_writer import save_kernel_source
-from ollama_client import OllamaError, generate
+from ollama_client import generate
 from optimizer_plan import OptimizerPlan, parse_optimizer_plan
 from parser import ParseError, parse_expression, parse_program
 from pipeline import run_pipeline
@@ -79,11 +79,7 @@ def run_ai_compiler(
             ir_summary=ir_summary,
             round_idx=round_idx,
         )
-        try:
-            response = generate(prompt)
-        except OllamaError as error:
-            print(f"Optimizer round {round_idx}: LLM unavailable, keeping best so far: {error}")
-            break
+        response = generate(prompt)
         plan = parse_optimizer_plan(response)
         plans.append(plan)
         print(f"Optimizer round {round_idx}: {plan.summary()}")

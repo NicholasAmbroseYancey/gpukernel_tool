@@ -17,7 +17,6 @@ from config import (
 )
 from evaluator import evaluate_ast, evaluate_multi
 from launch import (
-    kernel_device,
     launch_multi,
     launch_single,
     load_kernel,
@@ -363,7 +362,7 @@ def run_comparative_benchmark(
 
 
 def verify_correctness(source: str, *, n: int = 1024, block_size: int = DEFAULT_BLOCK_SIZE) -> bool:
-    if kernel_device() is None:
+    if not _cuda_available():
         return False
 
     from verify import check, check_multi
