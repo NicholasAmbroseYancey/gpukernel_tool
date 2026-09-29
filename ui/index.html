@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gpukernel_tool UI</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div>
+          <h1>gpukernel_tool</h1>
+          <p>Expression-to-kernel compiler preview</p>
+        </div>
+        <div class="badges">
+          <span class="badge">CLI backend</span>
+          <span class="badge alt">Local prototype</span>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel input-panel">
+          <h2>Expression input</h2>
+          <label for="expression">Math expression</label>
+          <textarea id="expression" rows="4">x * y + sin(x)</textarea>
+
+          <div class="button-row">
+            <button id="compileBtn">Compile</button>
+            <button id="unitBtn" class="secondary">Run unit tests</button>
+            <button id="kernelBtn" class="secondary">Run kernel tests</button>
+          </div>
+
+          <div id="status" class="status neutral">Idle</div>
+        </section>
+
+        <section class="panel output-panel">
+          <h2>Compiled kernel</h2>
+          <pre id="kernelOutput">No kernel generated yet.</pre>
+        </section>
+      </main>
+
+      <section class="panel test-panel">
+        <h2>Test output</h2>
+        <pre id="testOutput">Run a test tier to inspect results.</pre>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
