@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import re
 
@@ -29,14 +30,21 @@ def is_valid(code):
 def save_kernel(code):
     os.makedirs("kernels", exist_ok=True)
 
-    cleaned = clean_output(code)
-
-    with open("kernels/kernel.py", "w") as f:
-        f.write(cleaned)
+    _write_kernel(clean_output(code))
 
 
 def save_kernel_source(code):
     """Save compiler-generated kernel source without LLM cleanup."""
     os.makedirs("kernels", exist_ok=True)
-    with open("kernels/kernel.py", "w") as f:
-        f.write(code)
+    _write_kernel(code)
+
+
+def _write_kernel(source):
+    path = "kernels/kernel.py"
+    with open(path, "w") as f:
+        f.write(source)
+    # A rewrite with the same size and mtime would otherwise load the old .pyc.
+    try:
+        os.remove(importlib.util.cache_from_source(path))
+    except FileNotFoundError:
+        pass

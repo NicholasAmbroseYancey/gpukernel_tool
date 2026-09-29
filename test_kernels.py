@@ -6,9 +6,14 @@ Benchmark tests are marked ``gpu`` and need a real GPU.
 
 import pytest
 
+import os
+
+import torch
+
 from benchmark import run_benchmark, verify_correctness
 from kernel_gen import generate_kernel_from_expr
 from kernel_writer import save_kernel_source
+from launch import kernel_device, launch_single, load_kernel, make_single_tensors
 from pipeline import compile_from_source, run_pipeline
 from run_kernel import run
 
@@ -43,6 +48,13 @@ SINGLE_EXPRESSIONS = [
     "pow(abs(x) + 1, 1.5)",
     "(abs(x) + 0.5) ** y",
     "x ** (y * 0 + 3)",
+    "atan(x * 5)",
+    "atan2(y, x)",
+    "atan2(1, x) + atan2(y, -2)",
+    "asin(x / (abs(x) + 1))",
+    "acos(sin(x)) - arcsin(cos(y))",
+    "arctan2(sin(x), cos(y)) * arctan(y)",
+    "asin(0.5) + x",
 ]
 
 MULTI_PROGRAMS = [
@@ -80,6 +92,40 @@ def test_broken_kernel_is_a_runtime_failure():
     assert not result.success
     assert result.stage == "runtime"
     assert "not_a_function" in result.message
+
+
+def test_rewritten_kernel_with_same_size_and_mtime_is_reloaded():
+    x, y, out = make_single_tensors(n=256)
+    for scale in ["1.0", "2.0"]:
+        save_kernel_source(f"SCALE = {scale}\n" + generate_kernel_from_expr("x * SCALE"))
+        if scale == "1.0":
+            mtime = os.stat("kernels/kernel.py").st_mtime_ns
+        else:
+            os.utime("kernels/kernel.py", ns=(mtime, mtime))
+        launch_single(load_kernel(), x, y, out)
+    assert torch.allclose(out, x * 2.0)
+
+
+def _run_on(expression, x, y):
+    _, code = compile_from_source(expression)
+    save_kernel_source(code)
+    out = torch.empty_like(x)
+    launch_single(load_kernel(), x, y, out)
+    return out
+
+
+def test_atan2_quadrants_and_axes():
+    values = [-2.0, -1.0, -0.25, 0.0, 0.25, 1.0, 2.0]
+    grid = torch.tensor([(a, b) for a in values for b in values], device=kernel_device())
+    y, x = grid[:, 0].contiguous(), grid[:, 1].contiguous()
+    assert torch.allclose(_run_on("atan2(y, x)", x, y), torch.atan2(y, x), atol=1e-5)
+
+
+def test_asin_acos_full_domain():
+    x = torch.linspace(-1.0, 1.0, 1001, device=kernel_device())
+    y = torch.zeros_like(x)
+    assert torch.allclose(_run_on("asin(x)", x, y), torch.asin(x), atol=1e-5)
+    assert torch.allclose(_run_on("acos(x)", x, y), torch.acos(x), atol=1e-5)
 
 
 @pytest.mark.parametrize("block_size", [64, 256, 1024])

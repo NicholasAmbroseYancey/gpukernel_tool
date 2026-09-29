@@ -91,6 +91,18 @@ class TestKernelGen(unittest.TestCase):
         code, _ = compile_expression("x * y")
         self.assertNotIn("_gk_", code)
 
+    def test_inverse_trig_includes_dependent_helpers(self):
+        code, _ = compile_expression("asin(x) + atan2(y, x)")
+        for helper in ["_gk_atan(v)", "_gk_atan2(y, x)", "_gk_asin(v)"]:
+            self.assertEqual(code.count(f"def {helper}:"), 1, helper)
+        self.assertLess(code.index("def _gk_atan("), code.index("def _gk_atan2("))
+        self.assertNotIn("_gk_acos", code)
+
+    def test_arc_aliases(self):
+        tree = parse_expression("arcsin(x) + arctan2(y, x)")
+        self.assertEqual(tree.body.left.func.id, "asin")
+        self.assertEqual(tree.body.right.func.id, "atan2")
+
     def test_emit_triton_multi_arg(self):
         expr = IRCall("max", (IRVar("x"), IRConst(1.0)))
         self.assertEqual(emit_triton(expr), "tl.maximum(x, 1)")

@@ -9,6 +9,7 @@ ALLOWED_VARS = frozenset({"x", "y"})
 ALLOWED_FUNCS = frozenset({
     "sin", "cos", "tan", "exp", "log", "sqrt", "abs", "tanh",
     "sigmoid", "relu", "max", "min",
+    "asin", "acos", "atan", "atan2",
 })
 
 FUNC_ARITY = {
@@ -23,12 +24,20 @@ FUNC_ARITY = {
     "sigmoid": 1,
     "relu": 1,
     "max": 2,
-    "min": 2
+    "min": 2,
+    "asin": 1,
+    "acos": 1,
+    "atan": 1,
+    "atan2": 2,
 }
 
 FUNC_ALIASES = {
     "ln": "log",
     "tg": "tan",
+    "arcsin": "asin",
+    "arccos": "acos",
+    "arctan": "atan",
+    "arctan2": "atan2",
 }
 
 BINOP_MAP = {
@@ -65,6 +74,10 @@ TRITON_FUNCS = {
     "relu": "tl.maximum(0.0, {0})",
     "max": "tl.maximum({0}, {1})",
     "min": "tl.minimum({0}, {1})",
+    "asin": "_gk_asin",
+    "acos": "_gk_acos",
+    "atan": "_gk_atan",
+    "atan2": "_gk_atan2",
 }
 
 TORCH_FUNCS = {
@@ -80,6 +93,10 @@ TORCH_FUNCS = {
     "relu": torch.relu,
     "max": torch.maximum,
     "min": torch.minimum,
+    "asin": torch.asin,
+    "acos": torch.acos,
+    "atan": torch.atan,
+    "atan2": torch.atan2,
 }
 
 MATH_FUNCS = {
@@ -91,6 +108,10 @@ MATH_FUNCS = {
     "sqrt": math.sqrt,
     "abs": abs,
     "tanh": math.tanh,
+    "asin": math.asin,
+    "acos": math.acos,
+    "atan": math.atan,
+    "atan2": math.atan2,
 }
 
 
