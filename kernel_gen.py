@@ -91,5 +91,5 @@ def emit_triton(expr: IRExpr) -> str:
                 return f"(+{val})"
             return f"(-{val})"
         case IRCall(func=func, args=args):
-            arg_s = emit_triton(args[0])
-            return triton_func_call(func, arg_s)
+            arg_s = [emit_triton(arg) for arg in args]
+            return triton_func_call(func, *arg_s)

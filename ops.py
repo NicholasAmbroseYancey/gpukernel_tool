@@ -8,8 +8,23 @@ ALLOWED_VARS = frozenset({"x", "y"})
 
 ALLOWED_FUNCS = frozenset({
     "sin", "cos", "tan", "exp", "log", "sqrt", "abs", "tanh",
-    "sigmoid", "relu",
+    "sigmoid", "relu", "max", "min",
 })
+
+FUNC_ARITY = {
+    "sin": 1,
+    "cos": 1,
+    "tan": 1,
+    "exp": 1,
+    "log": 1,
+    "sqrt": 1,
+    "abs": 1,
+    "tanh": 1,
+    "sigmoid": 1,
+    "relu": 1,
+    "max": 2,
+    "min": 2
+}
 
 FUNC_ALIASES = {
     "ln": "log",
@@ -48,6 +63,8 @@ TRITON_FUNCS = {
     "tanh": "(2.0 * tl.sigmoid(2.0 * ({0})) - 1.0)",
     "sigmoid": "tl.sigmoid",
     "relu": "tl.maximum(0.0, {0})",
+    "max": "tl.maximum({0}, {1})",
+    "min": "tl.minimum({0}, {1})",
 }
 
 TORCH_FUNCS = {
@@ -61,6 +78,8 @@ TORCH_FUNCS = {
     "tanh": torch.tanh,
     "sigmoid": torch.sigmoid,
     "relu": torch.relu,
+    "max": torch.max,
+    "min": torch.min,
 }
 
 MATH_FUNCS = {
@@ -87,9 +106,9 @@ def is_allowed_var(name: str) -> bool:
     return name in ALLOWED_VARS
 
 
-def triton_func_call(func: str, arg: str) -> str:
+def triton_func_call(func: str, *args: str) -> str:
     func = normalize_func(func)
     mapping = TRITON_FUNCS[func]
     if "{0}" in mapping:
-        return mapping.format(arg)
-    return f"{mapping}({arg})"
+        return mapping.format(*args)
+    return f"{mapping}({', '.join(args)})"

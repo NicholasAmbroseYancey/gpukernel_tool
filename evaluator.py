@@ -77,4 +77,4 @@ def _eval_expr(expr: IRExpr, env: dict[str, torch.Tensor]) -> torch.Tensor:
             raise ValueError(f"Unsupported unary op: {op}")
         case IRCall(func=func, args=args):
             fn = TORCH_FUNCS[func]
-            return fn(_eval_expr(args[0], env))
+            return fn(*(_eval_expr(arg, env) for arg in args))

@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import re
 
-from ops import ALLOWED_FUNCS, ALLOWED_VARS, BINOP_MAP, FUNC_ALIASES, UNARYOP_MAP, is_allowed_func, normalize_func
+from ops import ALLOWED_FUNCS, ALLOWED_VARS, BINOP_MAP, FUNC_ALIASES, UNARYOP_MAP, FUNC_ARITY, is_allowed_func, normalize_func
 from rewrite import preprocess_source, rewrite_ast
 
 
@@ -110,9 +110,12 @@ def _validate_node(node: ast.AST) -> None:
         node.func.id = func
         if node.keywords:
             raise ParseError("Keyword arguments are not supported")
-        if len(node.args) != 1:
-            raise ParseError(f"{func}() expects exactly 1 argument")
-        _validate_node(node.args[0])
+        expected_arity = FUNC_ARITY[func]
+        if len(node.args) != expected_arity:
+            plural = "argument" if expected_arity == 1 else "arguments"
+            raise ParseError(f"{func}() expects exactly {expected_arity} {plural}")
+        for arg in node.args:
+            _validate_node(arg)
         return
 
     raise ParseError(f"Unsupported expression node: {type(node).__name__}")
