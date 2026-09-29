@@ -84,4 +84,4 @@ def _brief(expr: IRExpr) -> str:
         case IRUnaryOp(op=op, operand=operand):
             return f"({op}{_brief(operand)})"
         case IRCall(func=func, args=args):
-            return f"{func}({_brief(args[0])})"
+            return f"{func}({', '.join(_brief(arg) for arg in args)})"

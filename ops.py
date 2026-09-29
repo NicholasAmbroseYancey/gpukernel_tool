@@ -78,8 +78,8 @@ TORCH_FUNCS = {
     "tanh": torch.tanh,
     "sigmoid": torch.sigmoid,
     "relu": torch.relu,
-    "max": torch.max,
-    "min": torch.min,
+    "max": torch.maximum,
+    "min": torch.minimum,
 }
 
 MATH_FUNCS = {

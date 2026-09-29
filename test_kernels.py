@@ -33,6 +33,8 @@ SINGLE_EXPRESSIONS = [
     "relu(x - y)",
     "(x + y) * (x - y)",
     "log(exp(x))",
+    "max(x, y)",
+    "min(x, 1) + max(sin(x), y)",
 ]
 
 MULTI_PROGRAMS = [

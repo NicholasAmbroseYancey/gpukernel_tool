@@ -33,6 +33,19 @@ class TestParser(unittest.TestCase):
         with self.assertRaises(ParseError):
             parse_expression("foobar(x)")
 
+    def test_multi_arg_call_parsed(self):
+        tree = parse_expression("max(x, y)")
+        self.assertEqual(len(tree.body.args), 2)
+
+    def test_rejects_wrong_arity(self):
+        for source in ["max(x)", "sin(x, y)", "min(x, y, 1)"]:
+            with self.subTest(source=source), self.assertRaises(ParseError):
+                parse_expression(source)
+
+    def test_validates_every_argument(self):
+        with self.assertRaises(ParseError):
+            parse_expression("max(x, z)")
+
 
 class TestIR(unittest.TestCase):
     def test_lowering(self):
@@ -59,6 +72,10 @@ class TestKernelGen(unittest.TestCase):
         expr = IRCall("sin", (IRVar("x"),))
         self.assertEqual(emit_triton(expr), "tl.sin(x)")
 
+    def test_emit_triton_multi_arg(self):
+        expr = IRCall("max", (IRVar("x"), IRConst(1.0)))
+        self.assertEqual(emit_triton(expr), "tl.maximum(x, 1)")
+
 
 class TestEvaluator(unittest.TestCase):
     def test_matches_pytorch(self):
@@ -76,6 +93,13 @@ class TestEvaluator(unittest.TestCase):
         tree = parse_expression("(x + y) * (x - y)")
         ref = evaluate_ast(tree, {"x": x, "y": y})
         expected = (x + y) * (x - y)
+        self.assertTrue(torch.allclose(ref, expected))
+
+    def test_multi_arg_matches_pytorch(self):
+        x = torch.randn(64)
+        y = torch.randn(64)
+        ref = evaluate_ast(parse_expression("max(x, y) - min(x, 0)"), {"x": x, "y": y})
+        expected = torch.maximum(x, y) - torch.minimum(x, torch.zeros_like(x))
         self.assertTrue(torch.allclose(ref, expected))
 
 
