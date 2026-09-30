@@ -5,7 +5,18 @@ from __future__ import annotations
 import ast
 import re
 
-from ops import ALLOWED_FUNCS, ALLOWED_VARS, BINOP_MAP, FUNC_ALIASES, UNARYOP_MAP, is_allowed_func, normalize_func
+from ops import (
+    ALLOWED_FUNCS,
+    ALLOWED_VARS,
+    BINOP_MAP,
+    FUNC_ALIASES,
+    FUNC_ARITY,
+    REDUCTIONS,
+    UNARYOP_MAP,
+    is_allowed_func,
+    is_reduction_call,
+    normalize_func,
+)
 from rewrite import preprocess_source, rewrite_ast
 
 
@@ -25,7 +36,7 @@ def parse_expression(source: str, *, rewrite: bool = True) -> ast.Expression:
 
     if rewrite:
         tree = rewrite_ast(tree)
-    _validate_node(tree.body)
+    _validate_node(tree.body, top_level=True)
     return tree
 
 
@@ -72,7 +83,7 @@ def parse_program(source: str) -> list[tuple[str, str]]:
     return assignments
 
 
-def _validate_node(node: ast.AST) -> None:
+def _validate_node(node: ast.AST, *, top_level: bool = False) -> None:
     if isinstance(node, ast.Name):
         if node.id not in ALLOWED_VARS:
             raise ParseError(f"Unknown variable: {node.id!r} (allowed: {sorted(ALLOWED_VARS)})")
@@ -102,17 +113,27 @@ def _validate_node(node: ast.AST) -> None:
         if not isinstance(node.func, ast.Name):
             raise ParseError("Only simple function calls are supported (e.g. sin(x))")
         func = normalize_func(node.func.id)
-        if not is_allowed_func(node.func.id):
+        if not is_allowed_func(node.func.id) and func not in REDUCTIONS:
             raise ParseError(
                 f"Unknown function: {node.func.id!r} "
-                f"(allowed: {sorted(ALLOWED_FUNCS | set(FUNC_ALIASES))})"
+                f"(allowed: {sorted(ALLOWED_FUNCS | REDUCTIONS | set(FUNC_ALIASES))})"
             )
         node.func.id = func
         if node.keywords:
             raise ParseError("Keyword arguments are not supported")
-        if len(node.args) != 1:
+        if is_reduction_call(func, len(node.args)):
+            if not top_level:
+                raise ParseError(f"{func}(...) must be the whole output, e.g. out = {func}(x * y)")
+            _validate_node(node.args[0])
+            return
+        if func not in FUNC_ARITY:
             raise ParseError(f"{func}() expects exactly 1 argument")
-        _validate_node(node.args[0])
+        expected_arity = FUNC_ARITY[func]
+        if len(node.args) != expected_arity:
+            plural = "argument" if expected_arity == 1 else "arguments"
+            raise ParseError(f"{func}() expects exactly {expected_arity} {plural}")
+        for arg in node.args:
+            _validate_node(arg)
         return
 
     raise ParseError(f"Unsupported expression node: {type(node).__name__}")

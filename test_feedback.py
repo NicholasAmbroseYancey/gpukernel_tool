@@ -22,6 +22,10 @@ class TestKernelLint(unittest.TestCase):
         self.assertTrue(is_valid(code))
         self.assertEqual(lint_kernel(code), [])
 
+    def test_reduction_kernel_passes(self):
+        code, _ = compile_expression("sum(x * y)")
+        self.assertEqual(lint_kernel(code), [])
+
     def test_missing_store_fails(self):
         code = "out = x + y"
         issues = lint_kernel(code)

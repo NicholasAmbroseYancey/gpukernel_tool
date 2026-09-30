@@ -1,7 +1,7 @@
 """End-to-end compiler: expression → AST → IR → Triton kernel."""
 
 from fusion import fuse_outputs
-from ir import IRMultiProgram, IRProgram, ast_to_ir, build_multi_program, expr_to_ir
+from ir import IRMultiProgram, IRProgram, IRReduce, ast_to_ir, build_multi_program, expr_to_ir
 from kernel_gen import generate_kernel, generate_multi_kernel
 from parser import parse_expression, parse_program
 
@@ -29,6 +29,11 @@ def compile_program(source: str) -> tuple[str, IRMultiProgram]:
     program = build_multi_program(fused, temps)
     code = generate_multi_kernel(program)
     return code, program
+
+
+def output_reduction(source: str) -> str | None:
+    output = ast_to_ir(parse_expression(source)).output
+    return output.op if isinstance(output, IRReduce) else None
 
 
 def is_multi_output(source: str) -> bool:

@@ -1,9 +1,9 @@
-from ops import ALLOWED_FUNCS, FUNC_ALIASES
+from ops import ALLOWED_FUNCS, FUNC_ALIASES, REDUCTIONS
 from feedback import FailureFeedback
 
 
 def _allowed_func_list() -> str:
-    names = sorted(ALLOWED_FUNCS | set(FUNC_ALIASES))
+    names = sorted(ALLOWED_FUNCS | REDUCTIONS | set(FUNC_ALIASES))
     return ", ".join(names)
 
 
@@ -20,6 +20,7 @@ Rules for your fix:
 - Prefer returning a corrected math expression (example: x * y + sin(x))
 - Use only variables x, y and functions: {_allowed_func_list()}
 - Aliases ln/tg are rewritten to log/tan automatically
+- sum/max/min with one argument reduce to a single value and must be the whole output (example: sum(x * y))
 - If the failure is Triton-specific, prefix with TRITON: and return only the rhs
 - Do NOT return a full kernel, markdown, or explanation
 """
@@ -75,6 +76,7 @@ REASON: <one line why this helps>
 Rules:
 - Use only variables x, y and functions: {_allowed_func_list()}
 - Prefer mathematically equivalent rewrites that reduce redundant work
+- sum/max/min with one argument reduce to a single value and must be the whole output (example: sum(x * y))
 - Suggest PROGRAM (multi-output fusion) when subexpressions repeat
 - Examples: fuse x*y reused across outputs; rewrite x*(y+1) as x*y+x
 - BLOCK_SIZE should target better occupancy/memory coalescing

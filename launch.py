@@ -7,8 +7,10 @@ import os
 
 import torch
 
-from compiler import compile_program, is_multi_output
+from compiler import compile_program, is_multi_output, output_reduction
 from config import DEFAULT_BLOCK_SIZE, DEFAULT_N, VERIFY_N
+from ir import IRReduce
+from ops import REDUCTION_IDENTITY
 
 
 def load_kernel():
@@ -37,11 +39,21 @@ def kernel_device() -> str | None:
 NO_DEVICE_MESSAGE = "CUDA is not available (set TRITON_INTERPRET=1 to run kernels on the CPU)"
 
 
-def make_single_tensors(n: int = DEFAULT_N, *, device: str | None = None):
+def make_output(n: int, reduce: str | None = None, *, device=None) -> torch.Tensor:
+    if reduce is None:
+        return torch.zeros(n, device=device, dtype=torch.float32)
+    return torch.full((1,), REDUCTION_IDENTITY[reduce], device=device, dtype=torch.float32)
+
+
+def make_single_output(source: str, n: int, *, device=None) -> torch.Tensor:
+    return make_output(n, output_reduction(source), device=device)
+
+
+def make_single_tensors(n: int = DEFAULT_N, *, device: str | None = None, source: str | None = None):
     device = device or kernel_device()
     x = torch.randn(n, device=device, dtype=torch.float32)
     y = torch.randn(n, device=device, dtype=torch.float32)
-    out = torch.zeros(n, device=device, dtype=torch.float32)
+    out = make_single_output(source, n, device=device) if source else make_output(n, device=device)
     return x, y, out
 
 
@@ -51,10 +63,14 @@ def make_multi_tensors(source: str, n: int = DEFAULT_N, *, device: str | None = 
     x = torch.randn(n, device=device, dtype=torch.float32)
     y = torch.randn(n, device=device, dtype=torch.float32)
     outputs = {
-        assignment.name: torch.zeros(n, device=device, dtype=torch.float32)
+        assignment.name: make_output(n, _reduction_of(assignment.expr), device=device)
         for assignment in program.outputs
     }
     return x, y, outputs, program
+
+
+def _reduction_of(expr) -> str | None:
+    return expr.op if isinstance(expr, IRReduce) else None
 
 
 def launch_single(
@@ -105,5 +121,5 @@ def launch_expression(
         launch_multi(kernel, x, y, outputs, program, block_size=block_size)
         return
 
-    x, y, out = make_single_tensors(n=n)
+    x, y, out = make_single_tensors(n=n, source=source)
     launch_single(kernel, x, y, out, block_size=block_size)

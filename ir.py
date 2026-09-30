@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 
-from ops import ALLOWED_VARS, BINOP_MAP, UNARYOP_MAP
+from ops import ALLOWED_VARS, BINOP_MAP, UNARYOP_MAP, is_reduction_call
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,13 @@ class IRCall:
     args: tuple[IRExpr, ...]
 
 
-IRExpr = IRVar | IRConst | IRBinOp | IRUnaryOp | IRCall
+@dataclass(frozen=True)
+class IRReduce:
+    op: str
+    arg: IRExpr
+
+
+IRExpr = IRVar | IRConst | IRBinOp | IRUnaryOp | IRCall | IRReduce
 
 
 @dataclass(frozen=True)
@@ -100,6 +106,8 @@ def _lower(node: ast.AST) -> IRExpr:
 
     if isinstance(node, ast.Call):
         func = node.func.id
+        if is_reduction_call(func, len(node.args)):
+            return IRReduce(func, _lower(node.args[0]))
         args = tuple(_lower(arg) for arg in node.args)
         return IRCall(func, args)
 
@@ -123,6 +131,8 @@ def _collect_vars(expr: IRExpr) -> set[str]:
             for arg in args:
                 result |= _collect_vars(arg)
             return result
+        case IRReduce(arg=arg):
+            return _collect_vars(arg)
 
 
 def _depth(expr: IRExpr) -> int:
@@ -135,3 +145,5 @@ def _depth(expr: IRExpr) -> int:
             return 1 + _depth(operand)
         case IRCall(args=args):
             return 1 + max((_depth(arg) for arg in args), default=0)
+        case IRReduce(arg=arg):
+            return 1 + _depth(arg)
