@@ -34,6 +34,10 @@ class AICompilerResult:
 # chases ordinary benchmark jitter instead of real speedups.
 NOISE_MARGIN = 0.02  # 2%
 
+# Stop the loop after this many consecutive rounds in which the LLM only
+# proposes configurations that have already been tried.
+MAX_REPEATED_PLANS = 2
+
 
 def classify_candidate(
     candidate_ms: float,
@@ -92,6 +96,10 @@ def run_ai_compiler(
     best_benchmark = benchmark
     best_block_size = benchmark.block_size
     plans: list[OptimizerPlan] = []
+    # Keyed on generated kernel source: the compiler is deterministic, so
+    # the same code + BLOCK_SIZE is the same kernel however the LLM spelled it.
+    tried: set[tuple[str, int]] = {(best_code, best_block_size)}
+    repeated_rounds = 0
 
     if not use_llm:
         return _finalize(best_source, best_code, best_benchmark, best_block_size, plans, compile_result.multi)
@@ -123,8 +131,19 @@ def run_ai_compiler(
             print(f"  skipped invalid plan: {error}")
             continue
 
-        save_kernel_source(candidate_code)
         block_size = plan.block_size or best_block_size
+        key = (candidate_code, block_size)
+        if key in tried:
+            repeated_rounds += 1
+            print(f"  skipped: already tried (block_size={block_size})")
+            if repeated_rounds >= MAX_REPEATED_PLANS:
+                print(f"  stopping early: {repeated_rounds} repeated plans in a row")
+                break
+            continue
+        repeated_rounds = 0
+        tried.add(key)
+
+        save_kernel_source(candidate_code)
         if not verify_correctness(candidate_source, block_size=block_size):
             print("  skipped: verification failed")
             continue
@@ -135,6 +154,8 @@ def run_ai_compiler(
             autotune=autotune and plan.block_size is None,
             block_size=plan.block_size,
         )
+        # Autotune may land on a different BLOCK_SIZE than requested.
+        tried.add((candidate_code, candidate_bench.block_size))
         improvement_threshold = best_benchmark.triton_ms * (1 - NOISE_MARGIN)
         verdict = classify_candidate(candidate_bench.triton_ms, best_benchmark.triton_ms)
         if verdict == "improved":
