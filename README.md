@@ -143,6 +143,18 @@ Continuous integration
 Both jobs also fail if tests leave the working tree dirty. Benchmarks aren't run in CI; run
 `python -m pytest -m gpu` on a machine with a GPU when you change performance-related code.
 
+The interpreter misses some failures that only show up when Triton compiles for a real GPU. To run the full
+suite on an NCShare H200, submit `scripts/ncshare/gpu_tests.sbatch` from a login node:
+
+```bash
+sbatch gpu_tests.sbatch            # origin/main
+sbatch gpu_tests.sbatch 7          # PR #7
+sbatch gpu_tests.sbatch my-branch  # a pushed branch
+```
+
+Output goes to `gk-gpu-tests-<jobid>.out`, and `sacct -j <jobid>` shows pass/fail. See the script header for
+testing an unpushed working tree.
+
 Notes & Troubleshooting
 -----------------------
 - CUDA (or `TRITON_INTERPRET=1` for CPU) must be available to run kernels and verification. Many modules return helpful RunResult objects when CUDA is missing.
