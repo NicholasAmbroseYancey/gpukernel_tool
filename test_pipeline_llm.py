@@ -26,6 +26,20 @@ class TestLLMFixLoop(unittest.TestCase):
         self.assertEqual(result.attempts, 2)
         self.assertEqual(result.expression, "x * y")
 
+    @patch("pipeline.generate", return_value="x * y")
+    @patch("pipeline.execute_attempt")
+    def test_math_fix_is_verified_against_the_original(self, execute, generate):
+        execute.side_effect = [_verify_failure("x * y + 1"), (True, None)]
+        run_pipeline("x * y + 1", max_attempts=3, use_llm=True)
+        self.assertEqual([call.args[0] for call in execute.call_args_list], ["x * y + 1"] * 2)
+
+    @patch("pipeline.generate", return_value="exp(x) - exp(-x)")
+    @patch("pipeline.execute_attempt", return_value=(True, None))
+    def test_unparseable_source_is_verified_against_the_fix(self, execute, generate):
+        result = run_pipeline("2 * sinh(x)", max_attempts=2, use_llm=True)
+        self.assertTrue(result.success)
+        self.assertEqual(execute.call_args.args[0], "exp(x) - exp(-x)")
+
     @patch("pipeline.generate", return_value="TRITON: x * y + tl.sin(x)")
     @patch("pipeline.execute_attempt")
     def test_triton_fix_is_compiled_into_kernel(self, execute, generate):

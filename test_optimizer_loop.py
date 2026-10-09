@@ -70,6 +70,14 @@ class OptimizerLoopTest(unittest.TestCase):
         self.assertEqual(result.source, "x * y + x")
         self.assertEqual(self.mocks["bench"].call_count, 1)
 
+    def test_plan_that_changes_the_math_is_rejected(self):
+        # verify_correctness passes (the kernel matches the plan's own
+        # source), but x * y no longer computes x * y + x.
+        result = self.run_loop(["EXPRESSION: x * y"], [1.0, 0.1])
+        self.assertEqual(result.source, "x * y + x")
+        self.mocks["verify"].assert_not_called()
+        self.assertEqual(self.mocks["bench"].call_count, 1)
+
     def test_garbage_reply_does_not_crash(self):
         replies = [
             "I think you should use shared memory!",

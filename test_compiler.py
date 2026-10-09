@@ -7,7 +7,7 @@ from compiler import compile_expression, compile_program
 from evaluator import evaluate_ast, evaluate_ir
 from ir import IRBinOp, IRCall, IRConst, IRReduce, IRVar, ast_to_ir
 from kernel_gen import emit_triton, generate_kernel
-from parser import ParseError, parse_expression
+from parser import ParseError, parse_expression, parse_program
 
 import torch
 
@@ -45,6 +45,13 @@ class TestParser(unittest.TestCase):
     def test_validates_every_argument(self):
         with self.assertRaises(ParseError):
             parse_expression("max(x, z)")
+
+    def test_duplicate_output_names_rejected(self):
+        with self.assertRaises(ParseError):
+            parse_program("out0 = x; out0 = y")
+
+    def test_auto_names_skip_explicit_names(self):
+        self.assertEqual(parse_program("x; out0 = y"), [("out1", "x"), ("out0", "y")])
 
     def test_reduction_must_be_whole_output(self):
         for source in ["sum(x) + 1", "sin(max(x))", "sum(sum(x))", "sum(x, y)"]:
@@ -128,7 +135,13 @@ class TestKernelGen(unittest.TestCase):
 
     def test_emit_triton_multi_arg(self):
         expr = IRCall("max", (IRVar("x"), IRConst(1.0)))
-        self.assertEqual(emit_triton(expr), "tl.maximum(x, 1)")
+        self.assertEqual(emit_triton(expr), "tl.maximum(x, 1.0)")
+
+    def test_constants_are_float_literals(self):
+        # Triton types `2` as int32, which tl.log2/tl.floor/tl.sqrt reject.
+        self.assertEqual(emit_triton(IRConst(2.0)), "2.0")
+        self.assertEqual(emit_triton(IRConst(1e20)), "1e+20")
+        self.assertEqual(emit_triton(IRConst(float("inf"))), 'float("inf")')
 
 
 class TestEvaluator(unittest.TestCase):
@@ -174,7 +187,7 @@ class TestEvaluator(unittest.TestCase):
 class TestCompiler(unittest.TestCase):
     def test_end_to_end_codegen(self):
         code, program = compile_expression("x * y - 2")
-        self.assertIn("((x * y) - 2)", code)
+        self.assertIn("((x * y) - 2.0)", code)
         self.assertEqual(program.inputs, frozenset({"x", "y"}))
 
 

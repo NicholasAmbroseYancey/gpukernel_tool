@@ -20,6 +20,29 @@ class TestMemoryAnalysis(unittest.TestCase):
         self.assertEqual(mem.output_bytes, 1024 * 4 * 3)
 
 
+class TestPytorchTiming(unittest.TestCase):
+    def test_parsing_is_outside_the_timed_region(self):
+        import torch
+        from unittest.mock import patch
+
+        import benchmark
+
+        timed_calls = []
+
+        def fake_median(fn):
+            with patch("benchmark.parse_expression", side_effect=AssertionError("parsed while timing")), \
+                 patch("benchmark.compile_program", side_effect=AssertionError("compiled while timing")):
+                fn()
+            timed_calls.append(fn)
+            return 1.0
+
+        x, y = torch.randn(8), torch.randn(8)
+        with patch("benchmark._median_ms", side_effect=fake_median):
+            benchmark.benchmark_pytorch("x * y + sin(x)", x, y)
+            benchmark.benchmark_pytorch("out0 = x * y; out1 = x + y", x, y)
+        self.assertEqual(len(timed_calls), 2)
+
+
 class TestOptimizerPlan(unittest.TestCase):
     def test_parse_expression_and_block_size(self):
         plan = parse_optimizer_plan(
