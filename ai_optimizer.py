@@ -12,7 +12,7 @@ from ollama_client import OllamaError, generate
 from optimizer_plan import OptimizerPlan, parse_optimizer_plan
 from parser import ParseError, parse_expression, parse_program
 from pipeline import run_pipeline
-from prompt_builder import optimize_prompt
+from prompt_builder import PlanAttempt, optimize_prompt
 from report import save_speedup_graph, save_text_report
 from verify import same_outputs
 
@@ -38,6 +38,10 @@ NOISE_MARGIN = 0.02  # 2%
 # Stop the loop after this many consecutive rounds in which the LLM only
 # proposes configurations that have already been tried.
 MAX_REPEATED_PLANS = 2
+
+
+class _ChangesMath(ValueError):
+    """A plan that parses and compiles but computes something different."""
 
 
 def classify_candidate(
@@ -101,6 +105,9 @@ def run_ai_compiler(
     # the same code + BLOCK_SIZE is the same kernel however the LLM spelled it.
     tried: set[tuple[str, int]] = {(best_code, best_block_size)}
     repeated_rounds = 0
+    # Every round's plan and outcome, fed back into the next prompt so the
+    # LLM knows what was already tried and why it was rejected.
+    history: list[PlanAttempt] = []
 
     if not use_llm:
         return _finalize(best_source, best_code, best_benchmark, best_block_size, plans, compile_result.multi)
@@ -112,6 +119,7 @@ def run_ai_compiler(
             benchmark=best_benchmark,
             ir_summary=ir_summary,
             round_idx=round_idx,
+            history=history,
         )
         try:
             response = generate(prompt)
@@ -122,6 +130,9 @@ def run_ai_compiler(
         plans.append(plan)
         print(f"Optimizer round {round_idx}: {plan.summary()}")
 
+        def record(outcome: str, detail: str = "") -> None:
+            history.append(PlanAttempt(round_idx, plan.summary(), outcome, detail))
+
         try:
             if plan.program:
                 parse_program(plan.resolved_source(best_source))
@@ -131,9 +142,13 @@ def run_ai_compiler(
             # verify_correctness only checks the kernel against the plan's own
             # source, so also check the plan still computes the original.
             if not same_outputs(current_source, candidate_source):
-                raise ValueError("plan changes what the kernel computes")
+                raise _ChangesMath("plan changes what the kernel computes")
         except (ParseError, ValueError) as error:
             print(f"  skipped invalid plan: {error}")
+            if isinstance(error, _ChangesMath):
+                record("changes_math")
+            else:
+                record("invalid", str(error))
             continue
 
         block_size = plan.block_size or best_block_size
@@ -141,6 +156,7 @@ def run_ai_compiler(
         if key in tried:
             repeated_rounds += 1
             print(f"  skipped: already tried (block_size={block_size})")
+            record("repeat", f"block_size={block_size}")
             if repeated_rounds >= MAX_REPEATED_PLANS:
                 print(f"  stopping early: {repeated_rounds} repeated plans in a row")
                 break
@@ -151,6 +167,7 @@ def run_ai_compiler(
         save_kernel_source(candidate_code)
         if not verify_correctness(candidate_source, block_size=block_size):
             print("  skipped: verification failed")
+            record("verify_failed")
             continue
 
         candidate_bench = run_benchmark(
@@ -163,6 +180,11 @@ def run_ai_compiler(
         tried.add((candidate_code, candidate_bench.block_size))
         improvement_threshold = best_benchmark.triton_ms * (1 - NOISE_MARGIN)
         verdict = classify_candidate(candidate_bench.triton_ms, best_benchmark.triton_ms)
+        record(
+            verdict,
+            f"{candidate_bench.triton_ms:.4f} ms vs best {best_benchmark.triton_ms:.4f} ms, "
+            f"block_size={candidate_bench.block_size}",
+        )
         if verdict == "improved":
             print(
                 f"  improved: {best_benchmark.triton_ms:.4f} ms -> "

@@ -1,5 +1,57 @@
+from collections.abc import Sequence
+from dataclasses import dataclass
+
 from ops import ALLOWED_FUNCS, FUNC_ALIASES, REDUCTIONS
 from feedback import FailureFeedback
+
+
+# Why the optimizer loop rejected (or accepted) a plan, phrased for the LLM.
+OUTCOME_REASONS = {
+    "invalid": "rejected: plan did not parse or compile",
+    "changes_math": "rejected: changes what the kernel computes",
+    "repeat": "rejected: same kernel and BLOCK_SIZE as an earlier attempt",
+    "verify_failed": "rejected: kernel output did not match PyTorch",
+    "within_margin": "rejected: faster, but within the benchmark noise margin",
+    "no_improvement": "rejected: not faster than the current best",
+    "improved": "accepted as the new best",
+}
+
+# Only the most recent attempts go in the prompt, to keep it short for a 7B model.
+MAX_HISTORY = 8
+_MAX_PLAN_CHARS = 160
+
+
+@dataclass(frozen=True)
+class PlanAttempt:
+    """One optimizer round: the plan the LLM proposed and what happened to it."""
+
+    round_idx: int
+    plan: str  # OptimizerPlan.summary()
+    outcome: str  # a key of OUTCOME_REASONS
+    detail: str = ""
+
+    def to_prompt_line(self) -> str:
+        plan = self.plan if len(self.plan) <= _MAX_PLAN_CHARS else self.plan[: _MAX_PLAN_CHARS - 3] + "..."
+        reason = OUTCOME_REASONS.get(self.outcome, self.outcome)
+        line = f"  round {self.round_idx}: {plan or '(empty plan)'} -> {reason}"
+        if self.detail:
+            line += f" ({self.detail})"
+        return line
+
+
+def _history_section(history: Sequence[PlanAttempt]) -> str:
+    if not history:
+        return ""
+    recent = list(history)[-MAX_HISTORY:]
+    lines = "\n".join(attempt.to_prompt_line() for attempt in recent)
+    return f"""
+Previous attempts this run:
+{lines}
+
+Do NOT propose any plan listed above again, including the same rewrite with a
+different spelling. If a rewrite was rejected for changing the math, it was not
+equivalent; do not try variations of it. Try a different idea instead.
+"""
 
 
 def _allowed_func_list() -> str:
@@ -32,6 +84,7 @@ def optimize_prompt(
     benchmark,
     ir_summary: str,
     round_idx: int,
+    history: Sequence[PlanAttempt] = (),
 ) -> str:
     sweep_lines = []
     for item in benchmark.block_size_sweep:
@@ -63,7 +116,7 @@ BLOCK_SIZE sweep:
 {sweep_text}
 
 Optimization round: {round_idx}
-
+{_history_section(history)}
 Return a plan using EXACTLY this format (omit lines to keep current value):
 EXPRESSION: <single math expression, or leave empty>
 PROGRAM:
