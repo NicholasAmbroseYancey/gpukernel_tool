@@ -56,10 +56,7 @@ class _AlgebraicRewriter(ast.NodeTransformer):
             if isinstance(inner.func, ast.Name) and inner.func.id == "exp" and len(inner.args) == 1:
                 return inner.args[0]
 
-        if func == "exp" and isinstance(arg, ast.Call):
-            inner = arg
-            if isinstance(inner.func, ast.Name) and inner.func.id == "log" and len(inner.args) == 1:
-                return inner.args[0]
+        # exp(log(x)) is not rewritten: it is NaN for x < 0, not x.
 
         return node
 

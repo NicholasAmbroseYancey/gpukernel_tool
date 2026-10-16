@@ -14,6 +14,7 @@ from parser import ParseError, parse_expression, parse_program
 from pipeline import run_pipeline
 from prompt_builder import optimize_prompt
 from report import save_speedup_graph, save_text_report
+from verify import same_outputs
 
 
 @dataclass
@@ -119,6 +120,10 @@ def run_ai_compiler(
             elif plan.expression:
                 parse_expression(plan.resolved_source(best_source))
             candidate_source, candidate_code = apply_plan(best_source, plan)
+            # verify_correctness only checks the kernel against the plan's own
+            # source, so also check the plan still computes the original.
+            if not same_outputs(current_source, candidate_source):
+                raise ValueError("plan changes what the kernel computes")
         except (ParseError, ValueError) as error:
             print(f"  skipped invalid plan: {error}")
             continue

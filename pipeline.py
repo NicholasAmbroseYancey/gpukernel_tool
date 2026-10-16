@@ -83,7 +83,10 @@ def execute_attempt(expression: str, kernel_code: str) -> tuple[bool, FailureFee
 
 
 def run_pipeline(source: str, *, max_attempts: int = 3, use_llm: bool = True) -> PipelineResult:
-    multi = is_multi_output(source)
+    try:
+        multi = is_multi_output(source)
+    except ParseError:
+        multi = False  # Reported as a compile failure by the first attempt.
     if multi:
         use_llm = False
 
@@ -108,7 +111,8 @@ def run_pipeline(source: str, *, max_attempts: int = 3, use_llm: bool = True) ->
                     output_expr=triton_override,
                 )
             else:
-                ok, last_feedback = execute_attempt(current_expression, kernel_code)
+                target = _verification_target(source, current_expression)
+                ok, last_feedback = execute_attempt(target, kernel_code)
                 if ok:
                     return PipelineResult(
                         success=True,
@@ -147,6 +151,21 @@ def run_pipeline(source: str, *, max_attempts: int = 3, use_llm: bool = True) ->
         last_feedback=last_feedback,
         multi=multi,
     )
+
+
+def _verification_target(source: str, current_expression: str) -> str:
+    """The expression a kernel is checked against.
+
+    That is the user's source, so an LLM "fix" that changes the math (e.g.
+    x * y + 1 -> x * y) fails verification. Only when the source itself
+    can't be parsed (the LLM is translating it) is the rewrite the target.
+    """
+    try:
+        if not is_multi_output(source):
+            parse_expression(source)
+    except ParseError:
+        return current_expression
+    return source.strip()
 
 
 def _llm_fix(feedback: FailureFeedback) -> tuple[str, str | None]:

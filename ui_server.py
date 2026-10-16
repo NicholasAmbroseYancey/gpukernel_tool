@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(ROOT, "ui")
@@ -41,6 +41,14 @@ def _run_pytest(mode: str) -> dict[str, object]:
     }
 
 
+def _ui_path(relative_name: str) -> str | None:
+    """Absolute path of a file under ui/, or None if it would escape ui/."""
+    path = os.path.realpath(os.path.join(UI_DIR, relative_name))
+    if os.path.commonpath([path, os.path.realpath(UI_DIR)]) != os.path.realpath(UI_DIR):
+        return None
+    return path
+
+
 class UiRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -49,7 +57,7 @@ class UiRequestHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path.startswith("/api/tests"):
-            mode = parsed.query.split("=", 1)[1] if "mode=" in parsed.query else "unit"
+            mode = parse_qs(parsed.query).get("mode", ["unit"])[0]
             try:
                 payload = _run_pytest(mode)
                 self._send_json(200, payload)
@@ -58,12 +66,9 @@ class UiRequestHandler(BaseHTTPRequestHandler):
             return
 
         static_path = parsed.path.lstrip("/")
-        if static_path and static_path not in {"index.html"}:
-            safe_path = os.path.normpath(os.path.join(UI_DIR, static_path)).replace("\\", "/")
-            if safe_path.startswith((UI_DIR.replace("\\", "/"), "/")):
-                if os.path.isfile(safe_path):
-                    self._serve_file(static_path)
-                    return
+        if static_path and static_path not in {"index.html"} and os.path.isfile(_ui_path(static_path) or ""):
+            self._serve_file(static_path)
+            return
 
         self._serve_file("index.html")
 
@@ -103,8 +108,8 @@ class UiRequestHandler(BaseHTTPRequestHandler):
         self._send_json(404, {"error": "Not found"})
 
     def _serve_file(self, relative_name: str):
-        file_path = os.path.join(UI_DIR, relative_name)
-        if not os.path.isfile(file_path):
+        file_path = _ui_path(relative_name)
+        if file_path is None or not os.path.isfile(file_path):
             self.send_response(404)
             self.end_headers()
             return

@@ -1,5 +1,7 @@
 """Deterministic IR → Triton kernel generation."""
 
+import math
+
 from ir import IRAssignment, IRBinOp, IRCall, IRConst, IRExpr, IRMultiProgram, IRProgram, IRReduce, IRUnaryOp, IRVar
 from ops import REDUCTION_IDENTITY, TRITON_REDUCTIONS, triton_func_call
 from triton_helpers import helpers_for
@@ -96,8 +98,10 @@ def emit_triton(expr: IRExpr) -> str:
         case IRVar(name=name):
             return name
         case IRConst(value=value):
-            if value == int(value):
-                return str(int(value))
+            # Always a float literal: Triton types `2` as int32, which tl.sqrt,
+            # tl.log2, tl.floor... reject, and ints past int64 don't compile.
+            if math.isinf(value):
+                return 'float("inf")'
             return repr(float(value))
         case IRBinOp(op=op, left=left, right=right):
             left_s = emit_triton(left)

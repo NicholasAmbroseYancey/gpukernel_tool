@@ -55,6 +55,16 @@ SINGLE_EXPRESSIONS = [
     "acos(sin(x)) - arcsin(cos(y))",
     "arctan2(sin(x), cos(y)) * arctan(y)",
     "asin(0.5) + x",
+    # NaN for part of the random inputs, in both the kernel and PyTorch.
+    "sqrt(x)",
+    "log(x) + asin(y)",
+    "x ** 2.5",
+    # Integer constants used to compile to int32 and break float-only ops.
+    "2 ** x",
+    "x ** 20",
+    "2 ** 0.5 + x",
+    "x * 1e20",
+    "exp(log(x))",
     "sum(x * y)",
     "max(x - y)",
     "min(sin(x) + y)",
@@ -102,7 +112,8 @@ def test_broken_kernel_is_a_runtime_failure():
 def test_rewritten_kernel_with_same_size_and_mtime_is_reloaded():
     x, y, out = make_single_tensors(n=256)
     for scale in ["1.0", "2.0"]:
-        save_kernel_source(f"SCALE = {scale}\n" + generate_kernel_from_expr("x * SCALE"))
+        # Compiled Triton only reads constexpr globals (the interpreter reads any).
+        save_kernel_source(generate_kernel_from_expr("x * SCALE") + f"\nSCALE = tl.constexpr({scale})\n")
         if scale == "1.0":
             mtime = os.stat("kernels/kernel.py").st_mtime_ns
         else:
