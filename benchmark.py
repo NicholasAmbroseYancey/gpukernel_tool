@@ -15,7 +15,8 @@ from config import (
     DEFAULT_BLOCK_SIZE,
     DEFAULT_N,
 )
-from evaluator import evaluate_ast, evaluate_multi
+from evaluator import evaluate_ir, evaluate_multi
+from ir import ast_to_ir
 from launch import (
     kernel_device,
     launch_multi,
@@ -117,14 +118,18 @@ def _measure_peak(fn) -> int:
 
 
 def benchmark_pytorch(source: str, x: torch.Tensor, y: torch.Tensor) -> float:
-    multi = is_multi_output(source)
+    # Parse and lower outside the timed region: only the PyTorch ops count.
+    env = {"x": x, "y": y}
+    if is_multi_output(source):
+        program = compile_program(source)[1]
 
-    def run_ref():
-        if multi:
-            evaluate_multi(compile_program(source)[1], {"x": x, "y": y})
-        else:
-            tree = parse_expression(source)
-            evaluate_ast(tree, {"x": x, "y": y})
+        def run_ref():
+            evaluate_multi(program, env)
+    else:
+        ir_program = ast_to_ir(parse_expression(source))
+
+        def run_ref():
+            evaluate_ir(ir_program, env)
 
     return _median_ms(run_ref)
 

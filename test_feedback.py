@@ -10,7 +10,7 @@ from feedback import DiffStats, FailureFeedback
 from kernel_lint import extract_output_expr, is_valid, lint_kernel
 from pipeline import parse_llm_fix, run_pipeline
 from run_kernel import build_feedback, lint_code
-from verify import compute_diff
+from verify import compute_diff, same_outputs
 
 
 class TestKernelLint(unittest.TestCase):
@@ -70,6 +70,19 @@ class TestDiffFeedback(unittest.TestCase):
         self.assertGreater(diff.mismatch_count, 0)
         self.assertEqual(len(diff.expected_samples), len(diff.actual_samples))
 
+    def test_matching_nans_are_not_a_mismatch(self):
+        # log(x) is NaN for x < 0 in both the kernel and PyTorch.
+        x = torch.tensor([-1.0, 1.0, 2.0])
+        y = torch.zeros(3)
+        self.assertIsNone(compute_diff(x, y, torch.log(x), "log(x)"))
+
+    def test_one_sided_nan_is_a_mismatch(self):
+        x = torch.tensor([1.0, 2.0])
+        y = torch.zeros(2)
+        diff = compute_diff(x, y, torch.tensor([float("nan"), 2.0]), "x")
+        self.assertEqual(diff.mismatch_count, 1)
+        self.assertEqual(diff.worst_indices, [0])
+
     def test_feedback_prompt_contains_diff(self):
         feedback = FailureFeedback(
             stage="verify",
@@ -125,6 +138,21 @@ class TestPipeline(unittest.TestCase):
         result = run_pipeline("x + y", max_attempts=3, use_llm=False)
         self.assertTrue(result.success)
         self.assertEqual(result.attempts, 1)
+
+
+class TestSameOutputs(unittest.TestCase):
+    def test_equivalent_rewrite(self):
+        self.assertTrue(same_outputs("x * y + x", "x * (y + 1)"))
+        self.assertTrue(same_outputs("log(x)", "log(x) + 0"))  # NaN on both sides
+
+    def test_different_math(self):
+        self.assertFalse(same_outputs("x * y + x", "x * y"))
+
+    def test_output_shape_must_match(self):
+        self.assertFalse(same_outputs("x * y", "sum(x * y)"))
+        self.assertFalse(same_outputs("x * y", "out0 = x * y; out1 = x"))
+        self.assertFalse(same_outputs("out0 = x; out1 = y", "out0 = x; out2 = y"))
+        self.assertTrue(same_outputs("out0 = x * y; out1 = x * y + 1", "out0 = y * x; out1 = 1 + x * y"))
 
 
 if __name__ == "__main__":

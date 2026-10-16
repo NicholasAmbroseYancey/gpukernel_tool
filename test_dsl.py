@@ -35,10 +35,11 @@ class TestRewrite(unittest.TestCase):
         self.assertIsInstance(tree.body, ast.Name)
         self.assertEqual(tree.body.id, "x")
 
-    def test_exp_log_cancels(self):
+    def test_exp_log_is_not_cancelled(self):
+        # exp(log(y)) is NaN for y < 0, so rewriting it to y changes results.
         tree = rewrite_ast(parse_expression("exp(log(y))", rewrite=False))
-        self.assertIsInstance(tree.body, ast.Name)
-        self.assertEqual(tree.body.id, "y")
+        self.assertIsInstance(tree.body, ast.Call)
+        self.assertEqual(tree.body.func.id, "exp")
 
     def test_preprocess_source(self):
         self.assertEqual(preprocess_source("ln(x)^2"), "log(x)**2")

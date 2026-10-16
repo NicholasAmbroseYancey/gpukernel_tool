@@ -62,15 +62,22 @@ def parse_program(source: str) -> list[tuple[str, str]]:
     auto_idx = 0
     assign_pattern = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<expr>.+)$")
 
-    for chunk in chunks:
-        match = assign_pattern.match(chunk)
+    matches = [assign_pattern.match(chunk) for chunk in chunks]
+    explicit_names = {match.group("name") for match in matches if match}
+
+    for chunk, match in zip(chunks, matches):
         if match:
             name = match.group("name")
             expr = match.group("expr").strip()
         else:
+            # Skip names the program assigns explicitly, e.g. "x; out0 = y".
+            while f"out{auto_idx}" in explicit_names:
+                auto_idx += 1
             name = f"out{auto_idx}"
             expr = chunk
             auto_idx += 1
+        if any(existing == name for existing, _ in assignments):
+            raise ParseError(f"Output {name!r} is assigned more than once")
         assignments.append((name, expr))
 
     if len(assignments) == 1 and assignments[0][0] == "out":
