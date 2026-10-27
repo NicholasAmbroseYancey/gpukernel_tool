@@ -10,7 +10,7 @@ from ir_analysis import analyze_source
 from kernel_writer import save_kernel_source
 from ollama_client import OllamaError, generate
 from optimizer_plan import OptimizerPlan, parse_optimizer_plan
-from parser import ParseError, parse_expression, parse_program
+from parser import ParseError
 from pipeline import run_pipeline
 from prompt_builder import optimize_prompt
 from report import save_speedup_graph, save_text_report
@@ -59,9 +59,21 @@ def classify_candidate(
     return "no_improvement"
 
 
+def plan_source(source: str, plan: OptimizerPlan) -> str:
+    """The plan's source, in the same shape as `source`.
+
+    The prompt's format has both EXPRESSION and PROGRAM, so a reply can fill in
+    both. For a single-output source the PROGRAM would be rejected as changing
+    the outputs, so the EXPRESSION is used.
+    """
+    if plan.expression and not is_multi_output(source):
+        return plan.expression.strip()
+    return plan.resolved_source(source)
+
+
 def apply_plan(source: str, plan: OptimizerPlan) -> tuple[str, str]:
-    resolved = plan.resolved_source(source)
-    if plan.program or is_multi_output(resolved):
+    resolved = plan_source(source, plan)
+    if is_multi_output(resolved):
         code, _ = compile_program(resolved)
     else:
         code, _ = compile_expression(resolved)
@@ -123,10 +135,6 @@ def run_ai_compiler(
         print(f"Optimizer round {round_idx}: {plan.summary()}")
 
         try:
-            if plan.program:
-                parse_program(plan.resolved_source(best_source))
-            elif plan.expression:
-                parse_expression(plan.resolved_source(best_source))
             candidate_source, candidate_code = apply_plan(best_source, plan)
             # verify_correctness only checks the kernel against the plan's own
             # source, so also check the plan still computes the original.

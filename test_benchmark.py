@@ -61,6 +61,12 @@ class TestOptimizerPlan(unittest.TestCase):
         self.assertIn("out1 = x + y", plan.program or "")
         self.assertEqual(plan.block_size, 256)
 
+    def test_title_case_label_ends_program_block(self):
+        plan = parse_optimizer_plan("PROGRAM:\nout0 = x * y\nout1 = x + y\nBlock_size: 512\nReason: fusion")
+        self.assertEqual(plan.program, "out0 = x * y\nout1 = x + y")
+        self.assertEqual(plan.block_size, 512)
+        self.assertEqual(plan.reason, "fusion")
+
     def test_resolved_source_prefers_program(self):
         plan = OptimizerPlan(expression="x + y", program="out0 = x * y")
         self.assertEqual(plan.resolved_source("fallback"), "out0 = x * y")
