@@ -8,6 +8,13 @@ from triton_helpers import helpers_for
 
 MAX_EXPANDED_POWER = 16
 
+# torch.amax/amin are NaN if any input is, but tl.max/tl.min and the float
+# atomics skip NaN. A block that saw NaN swaps these bits into the output:
+# +NaN for max and -NaN for min, which the float atomic_max/atomic_min never
+# replace. The swap goes through an int32 pointer because the interpreter has
+# no float atomic_xchg.
+NAN_BITS = {"max": 0x7FC00000, "min": -0x400000}
+
 
 SINGLE_KERNEL_TEMPLATE = """import triton
 import triton.language as tl
@@ -49,7 +56,14 @@ def _emit_store(name: str, reduce: str | None) -> str:
     block_op, atomic_op = TRITON_REDUCTIONS[reduce]
     identity = REDUCTION_IDENTITY[reduce]
     fill = repr(identity) if identity == 0 else f'float("{identity}")'
-    return f"    {atomic_op}({name}_ptr, {block_op}(tl.where(mask, {name}, {fill}), axis=0))"
+    line = f"    {atomic_op}({name}_ptr, {block_op}(tl.where(mask, {name}, {fill}), axis=0))"
+    if reduce not in NAN_BITS:
+        return line
+    has_nan = f"tl.sum(tl.where(mask & ({name} != {name}), 1, 0), axis=0) > 0"
+    return (
+        f"{line}\n"
+        f"    tl.atomic_xchg({name}_ptr.to(tl.pointer_type(tl.int32)), {NAN_BITS[reduce]}, mask={has_nan})"
+    )
 
 
 def generate_multi_kernel(program: IRMultiProgram) -> str:

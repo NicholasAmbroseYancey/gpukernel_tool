@@ -69,6 +69,12 @@ SINGLE_EXPRESSIONS = [
     "max(x - y)",
     "min(sin(x) + y)",
     "sum(x ** 2)",
+    # torch propagates NaN through relu/max/min, so the kernel must too.
+    "relu(log(x))",
+    "max(log(x), y)",
+    "min(sqrt(x), y)",
+    "max(log(x))",
+    "min(sqrt(x))",
 ]
 
 MULTI_PROGRAMS = [
@@ -77,6 +83,7 @@ MULTI_PROGRAMS = [
     "x * y; relu(x); exp(y) - 1",
     "out0 = x ** 2; out1 = (abs(x) + 1) ** y",
     "out0 = x * y; out1 = sum(x * y); out2 = max(x * y)",
+    "out0 = log(x); out1 = max(log(x)); out2 = min(sqrt(y))",
 ]
 
 
@@ -161,6 +168,18 @@ def test_reduction_ignores_masked_lanes(source, expected):
     out = make_single_output(source, x.numel(), device=x.device)
     launch_single(load_kernel(), x, torch.zeros_like(x), out, block_size=256)
     assert out.item() == expected
+
+
+@pytest.mark.parametrize("source", ["max(x)", "min(-x)"])
+@pytest.mark.parametrize("nan_at", [0, 500, 999])
+def test_one_nan_makes_max_and_min_nan(source, nan_at):
+    x = torch.full((1000,), -5.0, device=kernel_device())
+    x[nan_at] = float("nan")
+    _, code = compile_from_source(source)
+    save_kernel_source(code)
+    out = make_single_output(source, x.numel(), device=x.device)
+    launch_single(load_kernel(), x, torch.zeros_like(x), out, block_size=256)
+    assert out.isnan().item()
 
 
 def test_llm_triton_override_keeps_reduction():

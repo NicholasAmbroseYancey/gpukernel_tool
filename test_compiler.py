@@ -135,7 +135,7 @@ class TestKernelGen(unittest.TestCase):
 
     def test_emit_triton_multi_arg(self):
         expr = IRCall("max", (IRVar("x"), IRConst(1.0)))
-        self.assertEqual(emit_triton(expr), "tl.maximum(x, 1.0)")
+        self.assertEqual(emit_triton(expr), "tl.maximum(x, 1.0, propagate_nan=tl.PropagateNan.ALL)")
 
     def test_constants_are_float_literals(self):
         # Triton types `2` as int32, which tl.log2/tl.floor/tl.sqrt reject.
