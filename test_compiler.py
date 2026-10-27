@@ -25,6 +25,10 @@ class TestParser(unittest.TestCase):
         tree = parse_expression("ln(x) + y")
         self.assertEqual(tree.body.left.func.id, "log")
 
+    def test_out_assignment_is_single_output(self):
+        self.assertEqual(ast.dump(parse_expression("out = x * y")), ast.dump(parse_expression("x * y")))
+        self.assertEqual(parse_program("out = x * y"), [("out", "x * y")])
+
     def test_rejects_unknown_var(self):
         with self.assertRaises(ParseError):
             parse_expression("z + 1")

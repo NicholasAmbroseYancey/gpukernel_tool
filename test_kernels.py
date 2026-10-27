@@ -75,6 +75,7 @@ SINGLE_EXPRESSIONS = [
     "min(sqrt(x), y)",
     "max(log(x))",
     "min(sqrt(x))",
+    "out = x * y",
 ]
 
 MULTI_PROGRAMS = [

@@ -10,6 +10,8 @@ from ops import ALLOWED_FUNCS, FUNC_ALIASES, normalize_func
 
 def preprocess_source(source: str) -> str:
     text = source.strip()
+    # A single output may be written as "out = <expr>".
+    text = re.sub(r"^out\s*=(?!=)\s*", "", text)
     text = text.replace("^", "**")
     for alias, canonical in FUNC_ALIASES.items():
         text = re.sub(rf"\b{alias}\s*\(", f"{canonical}(", text)
