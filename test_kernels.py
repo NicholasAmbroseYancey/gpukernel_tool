@@ -145,6 +145,13 @@ def test_atan2_quadrants_and_axes():
     assert torch.allclose(_run_on("atan2(y, x)", x, y), torch.atan2(y, x), atol=1e-5)
 
 
+def test_pow_special_cases_match_torch():
+    inf, nan = float("inf"), float("nan")
+    b = torch.tensor([1.0, 1.0, -1.0, -1.0, 0.0, 2.0, -2.0, nan, inf, 0.5, -inf, -inf, -inf], device=kernel_device())
+    e = torch.tensor([nan, inf, inf, -inf, 0.0, nan, 3.0, 0.0, -1.0, -inf, 0.5, -0.5, 3.0], device=kernel_device())
+    assert torch.allclose(_run_on("x ** y", b, e), b ** e, equal_nan=True)
+
+
 def test_asin_acos_full_domain():
     x = torch.linspace(-1.0, 1.0, 1001, device=kernel_device())
     y = torch.zeros_like(x)
