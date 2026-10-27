@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from datetime import datetime
@@ -70,8 +71,10 @@ def save_speedup_graph(report: BenchmarkReport, directory: str = "reports") -> s
 
 
 def _slugify(source: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9]+", "_", source)[:48].strip("_")
-    return slug or "kernel"
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", source)[:48].strip("_") or "kernel"
+    # Different sources can share a slug (x * y and x + y are both x_y).
+    digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:8]
+    return f"{slug}_{digest}"
 
 
 def _short_source(source: str) -> str:
