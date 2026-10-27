@@ -152,6 +152,14 @@ def test_pow_special_cases_match_torch():
     assert torch.allclose(_run_on("x ** y", b, e), b ** e, equal_nan=True)
 
 
+def test_division_is_correctly_rounded():
+    # Approximate division puts some x / y with |x| <= |y| past 1, and asin is NaN there.
+    x = torch.randn(1 << 16, device=kernel_device())
+    y = x * (1 + torch.rand_like(x) * 1e-6)
+    assert torch.equal(_run_on("x / y", x, y), x / y)
+    assert not _run_on("asin(x / y)", x, y).isnan().any()
+
+
 def test_asin_acos_full_domain():
     x = torch.linspace(-1.0, 1.0, 1001, device=kernel_device())
     y = torch.zeros_like(x)

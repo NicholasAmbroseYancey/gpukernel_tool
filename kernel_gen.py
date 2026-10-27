@@ -122,6 +122,10 @@ def emit_triton(expr: IRExpr) -> str:
             right_s = emit_triton(right)
             if op == "**":
                 return _emit_pow(left_s, right, right_s)
+            if op == "/":
+                # On a GPU, `/` is approximate (~2 ulp), so x / y can round past 1
+                # and make asin/acos NaN where torch's correctly rounded division isn't.
+                return f"tl.div_rn({left_s}, {right_s})"
             return f"({left_s} {op} {right_s})"
         case IRUnaryOp(op=op, operand=operand):
             val = emit_triton(operand)
