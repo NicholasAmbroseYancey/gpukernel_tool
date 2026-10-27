@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from dataclasses import replace
 
@@ -14,6 +15,7 @@ from ollama_client import OllamaError, generate
 from parser import ParseError, parse_expression
 from prompt_builder import fix_prompt
 from run_kernel import build_feedback, lint_code, run
+from triton_helpers import HELPERS
 
 
 class PipelineResult:
@@ -57,10 +59,47 @@ def compile_from_triton_expr(triton_expr: str, expression: str) -> tuple[str, st
         raise ValueError("Triton expression override is not supported for multi-output programs")
     if re.search(r"[;\n]|import |def |@", triton_expr):
         raise ValueError("Triton fix must be a single expression")
-    banned = ["numpy", "torch", "eval(", "exec("]
-    if any(token in triton_expr for token in banned):
-        raise ValueError("Triton fix contains banned tokens")
+    _check_triton_expr(triton_expr)
     return expression, generate_kernel_from_expr(triton_expr, reduce=output_reduction(expression))
+
+
+_TRITON_FIX_NODES = (
+    ast.Expression, ast.BinOp, ast.UnaryOp, ast.Compare, ast.BoolOp, ast.Call, ast.keyword,
+    ast.operator, ast.unaryop, ast.cmpop, ast.boolop, ast.expr_context,
+)
+
+
+def _check_triton_expr(triton_expr: str) -> None:
+    """Allow only arithmetic on x and y with tl.* and _gk_* calls.
+
+    Under TRITON_INTERPRET=1 the kernel body runs as plain Python, so a
+    blocklist isn't enough: open(...) or tl.core.builtins would run on the host.
+    """
+    try:
+        tree = ast.parse(triton_expr, mode="eval")
+    except SyntaxError as e:
+        raise ValueError(f"Triton fix must be a single expression: {e.msg}") from e
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            ok = node.id in {"x", "y", "tl"} or node.id in HELPERS
+        elif isinstance(node, ast.Attribute):
+            # tl.sin, and tl.PropagateNan.ALL for propagate_nan=...
+            ok = not node.attr.startswith("_") and (
+                _is_name(node.value, "tl")
+                or isinstance(node.value, ast.Attribute)
+                and node.value.attr == "PropagateNan"
+                and _is_name(node.value.value, "tl")
+            )
+        elif isinstance(node, ast.Constant):
+            ok = isinstance(node.value, (int, float))
+        else:
+            ok = isinstance(node, _TRITON_FIX_NODES)
+        if not ok:
+            raise ValueError(f"Triton fix may only use x, y, numbers and tl.* calls, got {ast.unparse(node)!r}")
+
+
+def _is_name(node: ast.AST, name: str) -> bool:
+    return isinstance(node, ast.Name) and node.id == name
 
 
 def build_kernel(expression: str, triton_expr: str | None = None) -> tuple[str, str]:
