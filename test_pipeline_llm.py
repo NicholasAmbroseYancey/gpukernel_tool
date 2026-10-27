@@ -188,5 +188,22 @@ class TestWithoutCuda(unittest.TestCase):
         self.assertFalse(verify_correctness("x + y"))
 
 
+
+class TestMainInput(unittest.TestCase):
+    def test_piped_input_without_blank_line(self):
+        import main
+
+        lines = iter(["out0 = x * y", "out1 = x + y"])
+
+        def fake_input(prompt=""):
+            try:
+                return next(lines)
+            except StopIteration:
+                raise EOFError from None
+
+        with patch("builtins.input", fake_input), patch("builtins.print"):
+            self.assertEqual(main.read_input(), "out0 = x * y\nout1 = x + y")
+
+
 if __name__ == "__main__":
     unittest.main()
