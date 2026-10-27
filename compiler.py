@@ -3,7 +3,7 @@
 from fusion import fuse_outputs
 from ir import IRMultiProgram, IRProgram, IRReduce, ast_to_ir, build_multi_program, expr_to_ir
 from kernel_gen import generate_kernel, generate_multi_kernel
-from parser import parse_expression, parse_program
+from parser import parse_expression, parse_program, split_program
 
 
 class CompileError(Exception):
@@ -37,12 +37,9 @@ def output_reduction(source: str) -> str | None:
 
 
 def is_multi_output(source: str) -> bool:
-    source = source.strip()
-    if ";" in source:
-        return len([part for part in source.split(";") if part.strip()]) > 1
-    lines = [line.strip() for line in source.splitlines() if line.strip()]
-    if len(lines) > 1:
+    chunks = split_program(source)
+    if len(chunks) > 1:
         return True
-    if len(lines) == 1 and "=" in lines[0]:
+    if len(chunks) == 1 and "=" in chunks[0]:
         return parse_program(source)[0][0] != "out"
     return False

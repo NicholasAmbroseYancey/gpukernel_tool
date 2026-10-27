@@ -29,6 +29,12 @@ class TestParser(unittest.TestCase):
         self.assertEqual(ast.dump(parse_expression("out = x * y")), ast.dump(parse_expression("x * y")))
         self.assertEqual(parse_program("out = x * y"), [("out", "x * y")])
 
+    def test_program_can_mix_semicolons_and_newlines(self):
+        source = "out0 = x; out1 = y\nout2 = x + y"
+        self.assertEqual([name for name, _ in parse_program(source)], ["out0", "out1", "out2"])
+        _, program = compile_program(source)
+        self.assertEqual(len(program.outputs), 3)
+
     def test_rejects_unknown_var(self):
         with self.assertRaises(ParseError):
             parse_expression("z + 1")
