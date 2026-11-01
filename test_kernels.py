@@ -112,8 +112,8 @@ def test_broken_kernel_is_a_runtime_failure():
 def test_rewritten_kernel_with_same_size_and_mtime_is_reloaded():
     x, y, out = make_single_tensors(n=256)
     for scale in ["1.0", "2.0"]:
-        # Compiled Triton only reads constexpr globals (the interpreter reads any).
-        save_kernel_source(generate_kernel_from_expr("x * SCALE") + f"\nSCALE = tl.constexpr({scale})\n")
+        # Same size and mtime, so linecache would hand Triton the old source unless cleared.
+        save_kernel_source(generate_kernel_from_expr(f"x * {scale}"))
         if scale == "1.0":
             mtime = os.stat("kernels/kernel.py").st_mtime_ns
         else:
