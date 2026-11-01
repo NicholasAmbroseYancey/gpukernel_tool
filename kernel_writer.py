@@ -1,4 +1,5 @@
 import importlib.util
+import linecache
 import os
 import re
 
@@ -43,8 +44,10 @@ def _write_kernel(source):
     path = "kernels/kernel.py"
     with open(path, "w") as f:
         f.write(source)
-    # A rewrite with the same size and mtime would otherwise load the old .pyc.
+    # A rewrite with the same size and mtime would otherwise load the old .pyc, and
+    # Triton (via inspect.getsource) would compile the old source still in linecache.
     try:
         os.remove(importlib.util.cache_from_source(path))
     except FileNotFoundError:
         pass
+    linecache.clearcache()
