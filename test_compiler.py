@@ -25,6 +25,16 @@ class TestParser(unittest.TestCase):
         tree = parse_expression("ln(x) + y")
         self.assertEqual(tree.body.left.func.id, "log")
 
+    def test_out_assignment_is_single_output(self):
+        self.assertEqual(ast.dump(parse_expression("out = x * y")), ast.dump(parse_expression("x * y")))
+        self.assertEqual(parse_program("out = x * y"), [("out", "x * y")])
+
+    def test_program_can_mix_semicolons_and_newlines(self):
+        source = "out0 = x; out1 = y\nout2 = x + y"
+        self.assertEqual([name for name, _ in parse_program(source)], ["out0", "out1", "out2"])
+        _, program = compile_program(source)
+        self.assertEqual(len(program.outputs), 3)
+
     def test_rejects_unknown_var(self):
         with self.assertRaises(ParseError):
             parse_expression("z + 1")
@@ -135,7 +145,7 @@ class TestKernelGen(unittest.TestCase):
 
     def test_emit_triton_multi_arg(self):
         expr = IRCall("max", (IRVar("x"), IRConst(1.0)))
-        self.assertEqual(emit_triton(expr), "tl.maximum(x, 1.0)")
+        self.assertEqual(emit_triton(expr), "tl.maximum(x, 1.0, propagate_nan=tl.PropagateNan.ALL)")
 
     def test_constants_are_float_literals(self):
         # Triton types `2` as int32, which tl.log2/tl.floor/tl.sqrt reject.

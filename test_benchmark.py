@@ -61,6 +61,12 @@ class TestOptimizerPlan(unittest.TestCase):
         self.assertIn("out1 = x + y", plan.program or "")
         self.assertEqual(plan.block_size, 256)
 
+    def test_title_case_label_ends_program_block(self):
+        plan = parse_optimizer_plan("PROGRAM:\nout0 = x * y\nout1 = x + y\nBlock_size: 512\nReason: fusion")
+        self.assertEqual(plan.program, "out0 = x * y\nout1 = x + y")
+        self.assertEqual(plan.block_size, 512)
+        self.assertEqual(plan.reason, "fusion")
+
     def test_resolved_source_prefers_program(self):
         plan = OptimizerPlan(expression="x + y", program="out0 = x * y")
         self.assertEqual(plan.resolved_source("fallback"), "out0 = x * y")
@@ -99,6 +105,16 @@ class TestReport(unittest.TestCase):
             text = handle.read()
         self.assertIn("speedup=2.00x", text)
         self.assertIn("block_size=256", text)
+
+    def test_reports_for_different_sources_do_not_collide(self):
+        paths = set()
+        for source in ["x * y", "x + y", "x / y"]:
+            report = BenchmarkReport(
+                source=source, n=1024, block_size=256, triton_ms=0.5, pytorch_ms=1.0, speedup=2.0,
+                memory=MemoryStats(io_bytes=0, peak_bytes=0, input_bytes=0, output_bytes=0),
+            )
+            paths.add(save_text_report(report, directory="reports_test"))
+        self.assertEqual(len(paths), 3)
 
 
 if __name__ == "__main__":

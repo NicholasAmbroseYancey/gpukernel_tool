@@ -40,18 +40,18 @@ def parse_expression(source: str, *, rewrite: bool = True) -> ast.Expression:
     return tree
 
 
+def split_program(source: str) -> list[str]:
+    """Statements of a program, separated by ';', newlines, or both."""
+    return [part.strip() for part in re.split(r"[;\n]", source) if part.strip()]
+
+
 def parse_program(source: str) -> list[tuple[str, str]]:
     """Parse multi-output program into named expression strings."""
     source = source.strip()
     if not source:
         raise ParseError("Empty program")
 
-    chunks: list[str] = []
-    if ";" in source:
-        chunks = [part.strip() for part in source.split(";") if part.strip()]
-    else:
-        chunks = [line.strip() for line in source.splitlines() if line.strip()]
-
+    chunks = split_program(source)
     if not chunks:
         raise ParseError("Empty program")
 

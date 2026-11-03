@@ -86,7 +86,8 @@ def parse_optimizer_plan(response: str) -> OptimizerPlan:
             continue
 
         if in_program:
-            if re.match(r"^[A-Z_]+:", stripped):
+            # Labels are matched case-insensitively below, so end the block the same way.
+            if re.match(r"^[A-Z_]+:", upper):
                 in_program = False
             else:
                 program_lines.append(stripped)

@@ -87,6 +87,30 @@ class TestTritonFixValidation(unittest.TestCase):
             with self.assertRaises(ValueError, msg=bad):
                 compile_from_triton_expr(bad, "x + y")
 
+    def test_rejects_host_python(self):
+        # Under TRITON_INTERPRET=1 these would run on the host.
+        for bad in [
+            "x + 0 * len(str(open('pwned', 'w').write('hi')))",
+            "tl.core.builtins.open('pwned')",
+            "getattr(tl, 'sin')(x)",
+            "x.__class__",
+            "(lambda: x)()",
+            "[x][0]",
+            "'x'",
+        ]:
+            with self.assertRaises(ValueError, msg=bad):
+                compile_from_triton_expr(bad, "x + y")
+
+    def test_accepts_triton_math(self):
+        for good in [
+            "x * y + tl.sin(x)",
+            "_gk_atan2(y, x) - 1",
+            "tl.maximum(x, y, propagate_nan=tl.PropagateNan.ALL)",
+            "tl.where(x > 0, x, -x * 2.0)",
+        ]:
+            _, code = compile_from_triton_expr(good, "x + y")
+            self.assertIn(f"out = {good}", code)
+
     def test_rejects_multi_output(self):
         with self.assertRaises(ValueError):
             compile_from_triton_expr("x", "out0 = x; out1 = y")
@@ -162,6 +186,23 @@ class TestWithoutCuda(unittest.TestCase):
 
     def test_verify_correctness_is_false(self, _):
         self.assertFalse(verify_correctness("x + y"))
+
+
+
+class TestMainInput(unittest.TestCase):
+    def test_piped_input_without_blank_line(self):
+        import main
+
+        lines = iter(["out0 = x * y", "out1 = x + y"])
+
+        def fake_input(prompt=""):
+            try:
+                return next(lines)
+            except StopIteration:
+                raise EOFError from None
+
+        with patch("builtins.input", fake_input), patch("builtins.print"):
+            self.assertEqual(main.read_input(), "out0 = x * y\nout1 = x + y")
 
 
 if __name__ == "__main__":

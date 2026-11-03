@@ -12,8 +12,13 @@ def _gk_pow(b, e):
     r = tl.exp2(e * tl.log2(tl.abs(b)))
     e_int = tl.floor(e) == e
     e_odd = tl.floor(e * 0.5) * 2.0 != e
-    neg = tl.where(e_int, tl.where(e_odd, -r, r), float("nan"))
+    # A negative base needs an integer e, except -inf: (-inf) ** 0.5 is inf.
+    neg = tl.where(e_int, tl.where(e_odd, -r, r), tl.where(b == float("-inf"), r, float("nan")))
     r = tl.where(b < 0, neg, r)
+    # IEEE 754 pow: 1 ** e and (-1) ** +-inf are 1, even for a NaN e.
+    # Nested tl.where, not & and |: the interpreter can't combine a constant e's bools.
+    r = tl.where(b == -1.0, tl.where(tl.abs(e) == float("inf"), 1.0, r), r)
+    r = tl.where(b == 1.0, 1.0, r)
     return tl.where(e == 0, 1.0, r)
 ''',
     "_gk_atan": '''

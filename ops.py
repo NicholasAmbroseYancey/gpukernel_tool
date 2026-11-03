@@ -79,9 +79,10 @@ TRITON_FUNCS = {
     "abs": "tl.abs",
     "tanh": "(2.0 * tl.sigmoid(2.0 * ({0})) - 1.0)",
     "sigmoid": "tl.sigmoid",
-    "relu": "tl.maximum(0.0, {0})",
-    "max": "tl.maximum({0}, {1})",
-    "min": "tl.minimum({0}, {1})",
+    # PropagateNan.ALL matches torch: NaN in, NaN out (the default drops NaN on GPU).
+    "relu": "tl.maximum(0.0, {0}, propagate_nan=tl.PropagateNan.ALL)",
+    "max": "tl.maximum({0}, {1}, propagate_nan=tl.PropagateNan.ALL)",
+    "min": "tl.minimum({0}, {1}, propagate_nan=tl.PropagateNan.ALL)",
     "asin": "_gk_asin",
     "acos": "_gk_acos",
     "atan": "_gk_atan",

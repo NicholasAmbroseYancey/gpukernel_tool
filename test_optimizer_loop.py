@@ -78,6 +78,13 @@ class OptimizerLoopTest(unittest.TestCase):
         self.mocks["verify"].assert_not_called()
         self.assertEqual(self.mocks["bench"].call_count, 1)
 
+    def test_reply_in_full_prompt_format_is_tried(self):
+        # The prompt shows EXPRESSION and PROGRAM, so replies often fill in both.
+        reply = "EXPRESSION: x * (y + 1)\nPROGRAM:\nout0 = x * (y + 1)\nBLOCK_SIZE: 512"
+        result = self.run_loop([reply], [1.0, 0.5])
+        self.assertEqual(result.source, "x * (y + 1)")
+        self.assertEqual(self.mocks["bench"].call_count, 2)
+
     def test_garbage_reply_does_not_crash(self):
         replies = [
             "I think you should use shared memory!",

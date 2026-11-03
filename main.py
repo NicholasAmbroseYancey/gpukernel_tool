@@ -14,7 +14,10 @@ def read_input() -> str:
     print("  (paste lines, then a blank line to finish)")
     lines: list[str] = []
     while True:
-        line = input("> " if not lines else "> ")
+        try:
+            line = input("> ")
+        except EOFError:  # Piped input with no blank line at the end.
+            return "\n".join(lines)
         if not line.strip():
             break
         lines.append(line)
