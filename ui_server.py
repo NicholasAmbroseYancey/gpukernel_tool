@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(ROOT, "ui")
+
+# Benchmarks are timing-sensitive, so only one optimize run may use the GPU
+# at a time. A second request is rejected instead of queued.
+_OPTIMIZE_LOCK = threading.Lock()
 
 
 def _run_pytest(mode: str) -> dict[str, object]:
@@ -38,6 +45,88 @@ def _run_pytest(mode: str) -> dict[str, object]:
         "mode": mode,
         "returncode": completed.returncode,
         "output": output.strip() or "No output captured.",
+    }
+
+
+def _num(value: object) -> float | None:
+    """A JSON-safe float: None for missing, NaN or infinite values."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _benchmark_payload(bench) -> dict[str, object]:
+    triton_ms = _num(bench.triton_ms)
+    throughput = None
+    if triton_ms and triton_ms > 0:
+        throughput = _num(bench.n / (triton_ms / 1000) / 1e6)
+
+    try:
+        memory = bench.memory.summary()
+    except Exception:  # pragma: no cover - memory summary is optional
+        memory = None
+
+    return {
+        "n": bench.n,
+        "block_size": bench.block_size,
+        "triton_ms": triton_ms,
+        "pytorch_ms": _num(bench.pytorch_ms),
+        "speedup": _num(bench.speedup),
+        "throughput_melem_s": throughput,
+        "memory": memory,
+        "sweep": [
+            {"block_size": item.block_size, "median_ms": _num(item.median_ms)}
+            for item in (bench.block_size_sweep or [])
+        ],
+    }
+
+
+def _run_optimize(expression: str, *, use_llm: bool) -> dict[str, object]:
+    from ai_optimizer import run_ai_compiler
+    from benchmark import verify_correctness
+
+    started = time.perf_counter()
+    result = run_ai_compiler(expression, use_llm=use_llm)
+    elapsed = time.perf_counter() - started
+
+    if not result.success:
+        return {
+            "success": False,
+            "error": "Compilation failed, so there was nothing to optimize.",
+            "kernel": result.kernel_code,
+        }
+
+    # Independent correctness check on the final source. None means the check
+    # could not run (for example no GPU), which is different from "wrong".
+    try:
+        correct: bool | None = bool(
+            verify_correctness(result.source, block_size=result.block_size)
+        )
+    except Exception:
+        correct = None
+
+    return {
+        "success": True,
+        "source": expression,
+        "optimized_source": result.source,
+        "kernel": result.kernel_code,
+        "block_size": result.block_size,
+        "multi": result.multi,
+        "correct": correct,
+        "elapsed_s": round(elapsed, 2),
+        "use_llm": use_llm,
+        "benchmark": _benchmark_payload(result.benchmark) if result.benchmark else None,
+        "plans": [
+            {
+                "summary": plan.summary(),
+                "block_size": plan.block_size,
+                "fuse": plan.fuse,
+                "reason": plan.reason,
+            }
+            for plan in result.plans
+        ],
     }
 
 
@@ -105,7 +194,38 @@ class UiRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        if parsed.path == "/api/optimize":
+            self._handle_optimize()
+            return
+
         self._send_json(404, {"error": "Not found"})
+
+    def _handle_optimize(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8")
+            payload = json.loads(raw or "{}")
+        except Exception as exc:  # pragma: no cover - UI-only handler
+            self._send_json(400, {"error": f"Invalid JSON: {exc}"})
+            return
+
+        expression = str(payload.get("expression", "")).strip()
+        if not expression:
+            self._send_json(400, {"error": "Expression is required."})
+            return
+        use_llm = bool(payload.get("use_llm", True))
+
+        if not _OPTIMIZE_LOCK.acquire(blocking=False):
+            self._send_json(409, {"error": "Another optimize run is already in progress."})
+            return
+
+        try:
+            result = _run_optimize(expression, use_llm=use_llm)
+            self._send_json(200 if result.get("success") else 422, result)
+        except Exception as exc:  # pragma: no cover - UI-only handler
+            self._send_json(500, {"error": str(exc)})
+        finally:
+            _OPTIMIZE_LOCK.release()
 
     def _serve_file(self, relative_name: str):
         file_path = _ui_path(relative_name)

@@ -25,24 +25,92 @@
           <label for="expression">Math expression</label>
           <textarea id="expression" rows="4">x * y + sin(x)</textarea>
 
+          <div class="chips-block">
+            <span class="hint">Examples</span>
+            <div id="chips" class="chips"></div>
+          </div>
+
           <div class="button-row">
             <button id="compileBtn">Compile</button>
+            <button id="optimizeBtn">Optimize</button>
             <button id="unitBtn" class="secondary">Run unit tests</button>
             <button id="kernelBtn" class="secondary">Run kernel tests</button>
           </div>
+          <label class="check" for="useLlm">
+            <input type="checkbox" id="useLlm" checked />
+            Use LLM in Optimize (needs Ollama running)
+          </label>
+          <p class="hint shortcut-hint">Tip: press Ctrl+Enter in the box to compile.</p>
 
-          <div id="status" class="status neutral">Idle</div>
+          <div id="status" class="status neutral" role="status" aria-live="polite">Idle</div>
         </section>
 
         <section class="panel output-panel">
-          <h2>Compiled kernel</h2>
+          <div class="panel-head">
+            <h2>Compiled kernel</h2>
+            <button id="copyBtn" class="secondary small" disabled>Copy</button>
+          </div>
           <pre id="kernelOutput">No kernel generated yet.</pre>
         </section>
       </main>
 
+      <section id="resultsPanel" class="panel results-panel" hidden>
+        <div class="panel-head">
+          <h2>Optimization results</h2>
+          <span id="correctBadge" class="result-badge hidden"></span>
+        </div>
+
+        <div class="stat-grid">
+          <div id="statSpeedupBox" class="stat">
+            <span class="stat-label">Speedup vs PyTorch</span>
+            <span id="statSpeedup" class="stat-value">–</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Triton</span>
+            <span id="statTriton" class="stat-value">–</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">PyTorch</span>
+            <span id="statPytorch" class="stat-value">–</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Block size</span>
+            <span id="statBlock" class="stat-value">–</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Throughput</span>
+            <span id="statThroughput" class="stat-value">–</span>
+          </div>
+        </div>
+
+        <p id="resultsMeta" class="results-meta"></p>
+
+        <div class="results-cols">
+          <div>
+            <h3>LLM plans</h3>
+            <ol id="planList" class="plan-list"></ol>
+          </div>
+          <div>
+            <h3>Block-size sweep</h3>
+            <table class="sweep">
+              <thead>
+                <tr><th>Block size</th><th>Median ms</th></tr>
+              </thead>
+              <tbody id="sweepBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <section class="panel test-panel">
-        <h2>Test output</h2>
-        <pre id="testOutput">Run a test tier to inspect results.</pre>
+        <div class="panel-head">
+          <h2>Test output</h2>
+          <span id="testBadge" class="result-badge hidden"></span>
+        </div>
+        <details id="testDetails" open>
+          <summary>Raw log</summary>
+          <pre id="testOutput">Run a test tier to inspect results.</pre>
+        </details>
       </section>
     </div>
 
