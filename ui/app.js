@@ -13,8 +13,12 @@ const testBadgeEl = document.getElementById('testBadge');
 
 const resultsPanel = document.getElementById('resultsPanel');
 const correctBadgeEl = document.getElementById('correctBadge');
-const statSpeedupBox = document.getElementById('statSpeedupBox');
-const statSpeedup = document.getElementById('statSpeedup');
+const comparisonViz = document.getElementById('comparisonViz');
+const kernelBar = document.getElementById('kernelBar');
+const pytorchBar = document.getElementById('pytorchBar');
+const kernelTime = document.getElementById('kernelTime');
+const pytorchTime = document.getElementById('pytorchTime');
+const performanceSummary = document.getElementById('performanceSummary');
 const statTriton = document.getElementById('statTriton');
 const statPytorch = document.getElementById('statPytorch');
 const statBlock = document.getElementById('statBlock');
@@ -135,6 +139,51 @@ function renderResults(result) {
   const bench = result.benchmark;
   resultsPanel.hidden = false;
 
+  const validTimes =
+    bench &&
+    Number.isFinite(bench.triton_ms) &&
+    Number.isFinite(bench.pytorch_ms) &&
+    bench.triton_ms > 0 &&
+    bench.pytorch_ms > 0;
+  comparisonViz.hidden = !validTimes;
+
+  if (validTimes) {
+    const maxTime = Math.max(bench.triton_ms, bench.pytorch_ms);
+    const speedup = bench.pytorch_ms / bench.triton_ms;
+
+    kernelBar.style.width = `${(bench.triton_ms / maxTime) * 100}%`;
+    pytorchBar.style.width = `${(bench.pytorch_ms / maxTime) * 100}%`;
+    kernelBar.setAttribute('aria-valuenow', String((bench.triton_ms / maxTime) * 100));
+    pytorchBar.setAttribute('aria-valuenow', String((bench.pytorch_ms / maxTime) * 100));
+    kernelTime.textContent = `${bench.triton_ms.toFixed(4)} ms`;
+    pytorchTime.textContent = `${bench.pytorch_ms.toFixed(4)} ms`;
+
+    if (result.correct === false) {
+      performanceSummary.textContent =
+        'Correctness check failed. Performance results are not considered valid.';
+    } else if (result.correct !== true) {
+      performanceSummary.textContent =
+        'Performance measurements are available, but correctness has not been verified.';
+    } else if (speedup > 1.005) {
+      performanceSummary.textContent =
+        `KernelForge was ${speedup.toFixed(2)}× faster than PyTorch.`;
+    } else if (speedup < 0.995) {
+      performanceSummary.textContent =
+        `PyTorch was ${(1 / speedup).toFixed(2)}× faster than KernelForge.`;
+    } else {
+      performanceSummary.textContent =
+        'Both implementations had similar execution times.';
+    }
+  } else {
+    kernelBar.style.width = '0%';
+    pytorchBar.style.width = '0%';
+    kernelBar.removeAttribute('aria-valuenow');
+    pytorchBar.removeAttribute('aria-valuenow');
+    kernelTime.textContent = '';
+    pytorchTime.textContent = '';
+    performanceSummary.textContent = '';
+  }
+
   if (result.correct === true) {
     correctBadgeEl.textContent = 'Correctness check passed';
     correctBadgeEl.className = 'result-badge passed';
@@ -147,17 +196,14 @@ function renderResults(result) {
   }
 
   if (bench) {
-    statSpeedup.textContent = `${fmt(bench.speedup, 2)}×`;
-    statSpeedupBox.className = `stat ${bench.speedup >= 1 ? 'good' : 'warn'}`;
     statTriton.textContent = `${fmt(bench.triton_ms, 4)} ms`;
     statPytorch.textContent = `${fmt(bench.pytorch_ms, 4)} ms`;
     statBlock.textContent = String(bench.block_size);
     statThroughput.textContent = `${fmt(bench.throughput_melem_s, 1)} Melem/s`;
   } else {
-    [statSpeedup, statTriton, statPytorch, statBlock, statThroughput].forEach((el) => {
+    [statTriton, statPytorch, statBlock, statThroughput].forEach((el) => {
       el.textContent = '–';
     });
-    statSpeedupBox.className = 'stat';
   }
 
   const meta = [];

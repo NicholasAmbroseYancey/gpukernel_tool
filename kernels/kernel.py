@@ -11,6 +11,6 @@ def kernel(x_ptr, y_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
     x = tl.load(x_ptr + offsets, mask=mask)
     y = tl.load(y_ptr + offsets, mask=mask)
 
-    out = ((x * y) + tl.sin(x))
+    out = (tl.sin(x) * y)
 
     tl.store(out_ptr + offsets, out, mask=mask)
