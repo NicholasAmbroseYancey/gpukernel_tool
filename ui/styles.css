@@ -572,6 +572,80 @@ button.chip:hover:not(:disabled) {
   border-top: 2px solid var(--aggie-gold);
 }
 
+.reference-panel {
+  margin-top: 20px;
+  border-top: 2px solid var(--accent-soft);
+}
+
+.reference-panel[hidden],
+.reference-table-wrap[hidden] {
+  display: none;
+}
+
+.reference-explanation {
+  max-width: 80ch;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.reference-expression {
+  margin: 0 0 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.reference-expression code {
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.reference-panel .panel-head {
+  margin-bottom: 14px;
+}
+
+.reference-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.reference-table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.reference-table caption {
+  padding: 10px 12px;
+  color: var(--muted);
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.reference-table th,
+.reference-table td {
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  text-align: right;
+}
+
+.reference-table th:first-child,
+.reference-table td:first-child {
+  text-align: left;
+}
+
+.reference-table thead th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.reference-table tbody th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 @media (max-width: 800px) {
   .layout {
     grid-template-columns: 1fr;

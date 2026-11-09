@@ -21,7 +21,7 @@
 
       <main class="layout">
         <section class="panel input-panel">
-          <h2>1. Expression input</h2>
+          <h2>1. Compile and reference</h2>
           <label for="expression">Math expression</label>
           <textarea id="expression" rows="4">x * y + sin(x)</textarea>
 
@@ -31,7 +31,7 @@
           </div>
 
           <div class="button-row">
-            <button id="compileBtn">Compile</button>
+            <button id="compileBtn">Compile + CPU Reference</button>
             <button id="optimizeBtn">Optimize</button>
             <button id="unitBtn" class="secondary">Run unit tests</button>
             <button id="kernelBtn" class="secondary">Run kernel tests</button>
@@ -40,7 +40,7 @@
             <input type="checkbox" id="useLlm" checked />
             Use LLM in Optimize (needs Ollama running)
           </label>
-          <p class="hint shortcut-hint">Tip: press Ctrl+Enter in the box to compile.</p>
+          <p class="hint shortcut-hint">Tip: press Ctrl+Enter to compile and calculate the reference.</p>
 
           <div id="status" class="status neutral" role="status" aria-live="polite">Idle</div>
         </section>
@@ -53,6 +53,28 @@
           <pre id="kernelOutput">No kernel generated yet.</pre>
         </section>
       </main>
+
+      <section id="referencePanel" class="panel reference-panel" hidden>
+        <div class="panel-head">
+          <h2>Reference output</h2>
+          <span class="badge alt">PyTorch · CPU</span>
+        </div>
+        <p class="reference-expression">
+          Expression: <code id="referenceExpression"></code>
+        </p>
+        <div id="referenceTableWrap" class="reference-table-wrap" hidden>
+          <table class="reference-table">
+            <caption>
+              Sample inputs and reference outputs. Reduction results can have fewer rows.
+            </caption>
+            <thead id="referenceHead"></thead>
+            <tbody id="referenceBody"></tbody>
+          </table>
+        </div>
+        <p class="reference-explanation">
+          Expected outputs from fixed sample inputs; generated Triton execution is not verified.
+        </p>
+      </section>
 
       <section id="resultsPanel" class="panel results-panel" hidden>
         <div class="panel-head">

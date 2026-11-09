@@ -10,6 +10,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from parser import ParseError
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(ROOT, "ui")
 
@@ -198,7 +200,53 @@ class UiRequestHandler(BaseHTTPRequestHandler):
             self._handle_optimize()
             return
 
+        if parsed.path == "/api/reference":
+            self._handle_reference()
+            return
+
         self._send_json(404, {"error": "Not found"})
+
+    def _handle_reference(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 0:
+                raise ValueError("Content-Length cannot be negative.")
+            raw = self.rfile.read(length).decode("utf-8")
+            payload = json.loads(raw or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            self._send_json(400, {"success": False, "error": f"Invalid JSON: {exc}"})
+            return
+
+        if not isinstance(payload, dict):
+            self._send_json(
+                400,
+                {"success": False, "error": "Request body must be a JSON object."},
+            )
+            return
+
+        expression = payload.get("expression")
+        if not isinstance(expression, str) or not expression.strip():
+            self._send_json(
+                400,
+                {"success": False, "error": "Expression is required and must be a string."},
+            )
+            return
+
+        try:
+            from reference_preview import build_reference_preview
+
+            preview = build_reference_preview(expression.strip())
+        except (ParseError, ValueError) as exc:
+            self._send_json(400, {"success": False, "error": str(exc)})
+            return
+        except Exception as exc:  # pragma: no cover - UI-only handler
+            self._send_json(500, {"success": False, "error": str(exc)})
+            return
+
+        self._send_json(
+            200,
+            {"success": True, "expression": expression.strip(), **preview},
+        )
 
     def _handle_optimize(self):
         try:
