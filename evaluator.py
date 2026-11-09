@@ -19,7 +19,7 @@ from ir import (
     IRVar,
     ast_to_ir,
 )
-from ops import TORCH_FUNCS, TORCH_REDUCTIONS
+from ops import TORCH_FUNCS, TORCH_REDUCTIONS, to_float32
 
 
 def evaluate_ir(program: IRProgram, env: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -46,6 +46,27 @@ def evaluate_ast(tree: ast.Expression, env: dict[str, torch.Tensor]) -> torch.Te
     return evaluate_ir(ast_to_ir(tree), env)
 
 
+def constant_value(expr: IRExpr) -> float | None:
+    """The float32 value of an expression with no inputs, such as atan2(1, 0),
+    computed as the reference computes it; None if it uses an input."""
+    if not _is_constant(expr):
+        return None
+    return float(_eval_expr(expr, {"x": torch.zeros((), dtype=torch.float32)}))
+
+
+def _is_constant(expr: IRExpr) -> bool:
+    match expr:
+        case IRConst():
+            return True
+        case IRBinOp(left=left, right=right):
+            return _is_constant(left) and _is_constant(right)
+        case IRUnaryOp(operand=operand):
+            return _is_constant(operand)
+        case IRCall(args=args):
+            return all(_is_constant(arg) for arg in args)
+    return False  # IRVar (inputs and fused temps) and IRReduce
+
+
 def _eval_expr(expr: IRExpr, env: dict[str, torch.Tensor]) -> torch.Tensor:
     match expr:
         case IRVar(name=name):
@@ -54,6 +75,9 @@ def _eval_expr(expr: IRExpr, env: dict[str, torch.Tensor]) -> torch.Tensor:
             return env[name]
         case IRConst(value=value):
             sample = env["x"] if "x" in env else env["y"]
+            # full_like raises for 1e39 in float32; the kernel sees inf.
+            if sample.dtype == torch.float32:
+                value = to_float32(value)
             return torch.full_like(sample, value)
         case IRBinOp(op=op, left=left, right=right):
             left_val = _eval_expr(left, env)

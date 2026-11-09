@@ -2,8 +2,9 @@
 
 import math
 
+from evaluator import constant_value
 from ir import IRAssignment, IRBinOp, IRCall, IRConst, IRExpr, IRMultiProgram, IRProgram, IRReduce, IRUnaryOp, IRVar
-from ops import REDUCTION_IDENTITY, TRITON_REDUCTIONS, triton_func_call
+from ops import REDUCTION_IDENTITY, TRITON_REDUCTIONS, to_float32, triton_func_call
 from triton_helpers import helpers_for
 
 MAX_EXPANDED_POWER = 16
@@ -108,15 +109,17 @@ def _emit_body(
 
 
 def emit_triton(expr: IRExpr) -> str:
+    if not isinstance(expr, (IRConst, IRVar)):
+        # Triton evaluates constant-only math in Python, where atan2(1, 0) and
+        # 0 ** -1 raise ZeroDivisionError, so compute it here like the reference.
+        value = constant_value(expr)
+        if value is not None:
+            return _emit_float(value)
     match expr:
         case IRVar(name=name):
             return name
         case IRConst(value=value):
-            # Always a float literal: Triton types `2` as int32, which tl.sqrt,
-            # tl.log2, tl.floor... reject, and ints past int64 don't compile.
-            if math.isinf(value):
-                return 'float("inf")'
-            return repr(float(value))
+            return _emit_float(value)
         case IRBinOp(op=op, left=left, right=right):
             left_s = emit_triton(left)
             right_s = emit_triton(right)
@@ -128,13 +131,28 @@ def emit_triton(expr: IRExpr) -> str:
                 return f"tl.div_rn({left_s}, {right_s})"
             return f"({left_s} {op} {right_s})"
         case IRUnaryOp(op=op, operand=operand):
-            val = emit_triton(operand)
             if op == "+":
-                return f"(+{val})"
-            return f"(-{val})"
+                # Triton tensors have no unary +.
+                return emit_triton(operand)
+            # Triton computes -v as 0 - v, which turns -(0.0) into +0.0, so
+            # y / -log(x / x) came out -inf where PyTorch gives +inf.
+            return f"({emit_triton(operand)} * -1.0)"
         case IRCall(func=func, args=args):
             arg_s = [emit_triton(arg) for arg in args]
             return triton_func_call(func, *arg_s)
+
+
+def _emit_float(value: float) -> str:
+    # Always a float literal: Triton types `2` as int32, which tl.sqrt,
+    # tl.log2, tl.floor... reject, and ints past int64 don't compile.
+    # Rounded to float32 like the reference: Triton computes in float64 with a
+    # constant outside the float32 range, so x * 1e39 was finite.
+    value = to_float32(value)
+    if math.isnan(value):
+        return 'float("nan")'
+    if math.isinf(value):
+        return 'float("inf")' if value > 0 else 'float("-inf")'
+    return repr(value)
 
 
 def _emit_pow(base: str, exponent: IRExpr, exponent_s: str) -> str:
@@ -158,12 +176,5 @@ def _emit_int_pow(base: str, n: int) -> str:
 
 
 def _const_value(expr: IRExpr) -> float | None:
-    match expr:
-        case IRConst(value=value):
-            return value
-        case IRUnaryOp(op=op, operand=operand):
-            inner = _const_value(operand)
-            if inner is None:
-                return None
-            return -inner if op == "-" else inner
-    return None
+    # Folded, so x ** (1 / 2) becomes tl.sqrt(x) and x ** (4 - 2) becomes x * x.
+    return constant_value(expr)

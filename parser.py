@@ -99,6 +99,10 @@ def _validate_node(node: ast.AST, *, top_level: bool = False) -> None:
     if isinstance(node, ast.Constant):
         if not isinstance(node.value, (int, float)):
             raise ParseError(f"Unsupported constant type: {type(node.value).__name__}")
+        try:
+            float(node.value)
+        except OverflowError:
+            raise ParseError("Number is too large to be a float") from None
         return
 
     if isinstance(node, ast.BinOp):
