@@ -13,8 +13,12 @@ const testBadgeEl = document.getElementById('testBadge');
 
 const resultsPanel = document.getElementById('resultsPanel');
 const correctBadgeEl = document.getElementById('correctBadge');
-const statSpeedupBox = document.getElementById('statSpeedupBox');
-const statSpeedup = document.getElementById('statSpeedup');
+const comparisonViz = document.getElementById('comparisonViz');
+const kernelBar = document.getElementById('kernelBar');
+const pytorchBar = document.getElementById('pytorchBar');
+const kernelTime = document.getElementById('kernelTime');
+const pytorchTime = document.getElementById('pytorchTime');
+const performanceSummary = document.getElementById('performanceSummary');
 const statTriton = document.getElementById('statTriton');
 const statPytorch = document.getElementById('statPytorch');
 const statBlock = document.getElementById('statBlock');
@@ -22,6 +26,11 @@ const statThroughput = document.getElementById('statThroughput');
 const resultsMeta = document.getElementById('resultsMeta');
 const planList = document.getElementById('planList');
 const sweepBody = document.getElementById('sweepBody');
+const referencePanel = document.getElementById('referencePanel');
+const referenceExpression = document.getElementById('referenceExpression');
+const referenceTableWrap = document.getElementById('referenceTableWrap');
+const referenceHead = document.getElementById('referenceHead');
+const referenceBody = document.getElementById('referenceBody');
 
 const STORAGE_KEY = 'gpukernel.lastExpression';
 // Edit these to match expressions your parser supports.
@@ -31,6 +40,7 @@ const allButtons = [compileBtn, optimizeBtn, unitBtn, kernelBtn];
 let busy = false;
 let lastKernelText = '';
 let copyTimer = null;
+let compileRequestId = 0;
 
 function loadSavedExpression() {
   try {
@@ -61,6 +71,7 @@ function setBusy(isBusy, activeBtn = null) {
     btn.disabled = isBusy;
     btn.classList.toggle('loading', isBusy && btn === activeBtn);
   });
+  expressionInput.disabled = isBusy;
   useLlmEl.disabled = isBusy;
   chipsEl.querySelectorAll('.chip').forEach((chip) => {
     chip.disabled = isBusy;
@@ -135,6 +146,51 @@ function renderResults(result) {
   const bench = result.benchmark;
   resultsPanel.hidden = false;
 
+  const validTimes =
+    bench &&
+    Number.isFinite(bench.triton_ms) &&
+    Number.isFinite(bench.pytorch_ms) &&
+    bench.triton_ms > 0 &&
+    bench.pytorch_ms > 0;
+  comparisonViz.hidden = !validTimes;
+
+  if (validTimes) {
+    const maxTime = Math.max(bench.triton_ms, bench.pytorch_ms);
+    const speedup = bench.pytorch_ms / bench.triton_ms;
+
+    kernelBar.style.width = `${(bench.triton_ms / maxTime) * 100}%`;
+    pytorchBar.style.width = `${(bench.pytorch_ms / maxTime) * 100}%`;
+    kernelBar.setAttribute('aria-valuenow', String((bench.triton_ms / maxTime) * 100));
+    pytorchBar.setAttribute('aria-valuenow', String((bench.pytorch_ms / maxTime) * 100));
+    kernelTime.textContent = `${bench.triton_ms.toFixed(4)} ms`;
+    pytorchTime.textContent = `${bench.pytorch_ms.toFixed(4)} ms`;
+
+    if (result.correct === false) {
+      performanceSummary.textContent =
+        'Correctness check failed. Performance results are not considered valid.';
+    } else if (result.correct !== true) {
+      performanceSummary.textContent =
+        'Performance measurements are available, but correctness has not been verified.';
+    } else if (speedup > 1.005) {
+      performanceSummary.textContent =
+        `KernelForge was ${speedup.toFixed(2)}× faster than PyTorch.`;
+    } else if (speedup < 0.995) {
+      performanceSummary.textContent =
+        `PyTorch was ${(1 / speedup).toFixed(2)}× faster than KernelForge.`;
+    } else {
+      performanceSummary.textContent =
+        'Both implementations had similar execution times.';
+    }
+  } else {
+    kernelBar.style.width = '0%';
+    pytorchBar.style.width = '0%';
+    kernelBar.removeAttribute('aria-valuenow');
+    pytorchBar.removeAttribute('aria-valuenow');
+    kernelTime.textContent = '';
+    pytorchTime.textContent = '';
+    performanceSummary.textContent = '';
+  }
+
   if (result.correct === true) {
     correctBadgeEl.textContent = 'Correctness check passed';
     correctBadgeEl.className = 'result-badge passed';
@@ -147,17 +203,14 @@ function renderResults(result) {
   }
 
   if (bench) {
-    statSpeedup.textContent = `${fmt(bench.speedup, 2)}×`;
-    statSpeedupBox.className = `stat ${bench.speedup >= 1 ? 'good' : 'warn'}`;
     statTriton.textContent = `${fmt(bench.triton_ms, 4)} ms`;
     statPytorch.textContent = `${fmt(bench.pytorch_ms, 4)} ms`;
     statBlock.textContent = String(bench.block_size);
     statThroughput.textContent = `${fmt(bench.throughput_melem_s, 1)} Melem/s`;
   } else {
-    [statSpeedup, statTriton, statPytorch, statBlock, statThroughput].forEach((el) => {
+    [statTriton, statPytorch, statBlock, statThroughput].forEach((el) => {
       el.textContent = '–';
     });
-    statSpeedupBox.className = 'stat';
   }
 
   const meta = [];
@@ -212,16 +265,118 @@ function renderResults(result) {
   }
 }
 
+function formatReferenceValue(value) {
+  if (value === null) return 'Non-finite';
+  return Number.isFinite(value) ? String(value) : '—';
+}
+
+function renderReferenceResults(expression, result) {
+  const inputs = result.inputs;
+  const outputs = result.outputs;
+  const isNumberArray = (values) =>
+    Array.isArray(values) &&
+    values.every((value) => typeof value === 'number' && Number.isFinite(value));
+  const isOutputArray = (values) =>
+    Array.isArray(values) &&
+    values.every((value) =>
+      value === null || (typeof value === 'number' && Number.isFinite(value))
+    );
+
+  if (
+    result.mode !== 'pytorch_cpu_reference' ||
+    result.kernel_executed !== false ||
+    result.performance_measured !== false ||
+    result.expression !== expression ||
+    !inputs ||
+    !isNumberArray(inputs.x) ||
+    !isNumberArray(inputs.y) ||
+    inputs.x.length === 0 ||
+    inputs.y.length === 0 ||
+    !outputs ||
+    typeof outputs !== 'object' ||
+    Array.isArray(outputs)
+  ) {
+    throw new Error('The reference API returned incomplete or unexpected data.');
+  }
+
+  const outputEntries = Object.entries(outputs);
+  if (
+    outputEntries.length === 0 ||
+    outputEntries.some(([, values]) => !isOutputArray(values)) ||
+    !outputEntries.some(([, values]) => values.length > 0)
+  ) {
+    throw new Error('The reference API returned no valid output values.');
+  }
+
+  const headers = ['Index', 'Input x', 'Input y', ...outputEntries.map(([name]) => name)];
+  const headRow = document.createElement('tr');
+  headers.forEach((label) => {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+  referenceHead.replaceChildren(headRow);
+
+  const rowCount = Math.max(
+    inputs.x.length,
+    inputs.y.length,
+    ...outputEntries.map(([, values]) => values.length)
+  );
+  const rows = [];
+  for (let index = 0; index < rowCount; index += 1) {
+    const row = document.createElement('tr');
+    const cells = [
+      String(index + 1),
+      index < inputs.x.length ? formatReferenceValue(inputs.x[index]) : '—',
+      index < inputs.y.length ? formatReferenceValue(inputs.y[index]) : '—',
+      ...outputEntries.map(([, values]) =>
+        index < values.length ? formatReferenceValue(values[index]) : '—'
+      )
+    ];
+    cells.forEach((value, cellIndex) => {
+      const cell = document.createElement(cellIndex === 0 ? 'th' : 'td');
+      if (cellIndex === 0) cell.scope = 'row';
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+    rows.push(row);
+  }
+  referenceBody.replaceChildren(...rows);
+  referenceExpression.textContent = expression;
+  referenceTableWrap.hidden = false;
+  referencePanel.hidden = false;
+}
+
+function clearReferenceResults() {
+  referencePanel.hidden = true;
+  referenceExpression.textContent = '';
+  referenceHead.replaceChildren();
+  referenceBody.replaceChildren();
+  referenceTableWrap.hidden = true;
+}
+
+function markExpressionChanged() {
+  compileRequestId += 1;
+  clearReferenceResults();
+  renderKernelMessage('Expression changed. Compile to generate a matching kernel.');
+  setStatus('Expression changed. Compile to refresh the results.', 'neutral');
+}
+
 async function compileExpression() {
   if (busy) return;
 
   const expression = expressionInput.value.trim();
+  const requestId = ++compileRequestId;
+  clearReferenceResults();
   if (!expression) {
+    renderKernelMessage('Enter an expression to compile.');
     setStatus('Please enter an expression first.', 'error');
     return;
   }
 
   setBusy(true, compileBtn);
+  renderKernelMessage('Compiling expression...');
   setStatus('Compiling expression...', 'neutral');
 
   try {
@@ -236,14 +391,47 @@ async function compileExpression() {
       throw new Error(result.error || 'Compile failed.');
     }
 
+    const compiledExpression =
+      typeof result.expression === 'string' ? result.expression : expression;
+    if (requestId !== compileRequestId) return;
+
     if (result.kernel) {
       renderKernel(result.kernel);
     } else {
       renderKernelMessage('No kernel generated.');
     }
-    saveExpression(expression);
-    setStatus(`Compiled: ${result.expression}`, 'success');
+    saveExpression(compiledExpression);
+    setStatus('Compiled. Calculating PyTorch CPU reference...', 'neutral');
+
+    try {
+      const referenceResponse = await fetch('/api/reference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expression: compiledExpression })
+      });
+
+      const referenceResult = await referenceResponse.json();
+      if (!referenceResponse.ok || !referenceResult || referenceResult.success !== true) {
+        throw new Error(
+          referenceResult && typeof referenceResult.error === 'string'
+            ? referenceResult.error
+            : 'CPU reference calculation failed.'
+        );
+      }
+
+      if (requestId !== compileRequestId) return;
+      renderReferenceResults(compiledExpression, referenceResult);
+      setStatus('Compiled and reference calculated (PyTorch · CPU).', 'success');
+    } catch (error) {
+      if (requestId !== compileRequestId) return;
+      clearReferenceResults();
+      setStatus(
+        `Compiled successfully, but CPU reference failed: ${error.message}`,
+        'error'
+      );
+    }
   } catch (error) {
+    if (requestId !== compileRequestId) return;
     renderKernelMessage(`Error: ${error.message}`, true);
     setStatus(error.message, 'error');
   } finally {
@@ -365,6 +553,7 @@ expressionInput.addEventListener('keydown', (event) => {
     compileExpression();
   }
 });
+expressionInput.addEventListener('input', markExpressionChanged);
 
 buildChips();
 

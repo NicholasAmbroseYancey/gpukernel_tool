@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>gpukernel_tool UI</title>
+    <title>KernelForge</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="page">
       <header class="topbar">
         <div>
-          <h1>gpukernel_tool</h1>
+          <h1>KernelForge</h1>
           <p>Expression-to-kernel compiler preview</p>
         </div>
         <div class="badges">
@@ -21,7 +21,7 @@
 
       <main class="layout">
         <section class="panel input-panel">
-          <h2>Expression input</h2>
+          <h2>1. Compile and reference</h2>
           <label for="expression">Math expression</label>
           <textarea id="expression" rows="4">x * y + sin(x)</textarea>
 
@@ -31,7 +31,7 @@
           </div>
 
           <div class="button-row">
-            <button id="compileBtn">Compile</button>
+            <button id="compileBtn">Compile + CPU Reference</button>
             <button id="optimizeBtn">Optimize</button>
             <button id="unitBtn" class="secondary">Run unit tests</button>
             <button id="kernelBtn" class="secondary">Run kernel tests</button>
@@ -40,31 +40,88 @@
             <input type="checkbox" id="useLlm" checked />
             Use LLM in Optimize (needs Ollama running)
           </label>
-          <p class="hint shortcut-hint">Tip: press Ctrl+Enter in the box to compile.</p>
+          <p class="hint shortcut-hint">Tip: press Ctrl+Enter to compile and calculate the reference.</p>
 
           <div id="status" class="status neutral" role="status" aria-live="polite">Idle</div>
         </section>
 
         <section class="panel output-panel">
           <div class="panel-head">
-            <h2>Compiled kernel</h2>
+            <h2>2. Compiled Kernel</h2>
             <button id="copyBtn" class="secondary small" disabled>Copy</button>
           </div>
           <pre id="kernelOutput">No kernel generated yet.</pre>
         </section>
       </main>
 
+      <section id="referencePanel" class="panel reference-panel" hidden>
+        <div class="panel-head">
+          <h2>Reference output</h2>
+          <span class="badge alt">PyTorch · CPU</span>
+        </div>
+        <p class="reference-expression">
+          Expression: <code id="referenceExpression"></code>
+        </p>
+        <div id="referenceTableWrap" class="reference-table-wrap" hidden>
+          <table class="reference-table">
+            <caption>
+              Sample inputs and reference outputs. Reduction results can have fewer rows.
+            </caption>
+            <thead id="referenceHead"></thead>
+            <tbody id="referenceBody"></tbody>
+          </table>
+        </div>
+        <p class="reference-explanation">
+          Expected outputs from fixed sample inputs; generated Triton execution is not verified.
+        </p>
+      </section>
+
       <section id="resultsPanel" class="panel results-panel" hidden>
         <div class="panel-head">
-          <h2>Optimization results</h2>
+          <h2>3. Performance comparison</h2>
           <span id="correctBadge" class="result-badge hidden"></span>
         </div>
 
-        <div class="stat-grid">
-          <div id="statSpeedupBox" class="stat">
-            <span class="stat-label">Speedup vs PyTorch</span>
-            <span id="statSpeedup" class="stat-value">–</span>
+        <div id="comparisonViz" class="comparison-viz" hidden>
+          <div class="comparison-heading">
+            <h3 id="comparisonTitle">Execution time</h3>
+            <span></span>
           </div>
+
+          <div class="comparison-row">
+            <span>KernelForge</span>
+            <div class="comparison-track">
+              <div
+                id="kernelBar"
+                class="comparison-fill kernel"
+                role="meter"
+                aria-label="KernelForge time relative to the slower result"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              ></div>
+            </div>
+            <strong id="kernelTime"></strong>
+          </div>
+
+          <div class="comparison-row">
+            <span>PyTorch</span>
+            <div class="comparison-track">
+              <div
+                id="pytorchBar"
+                class="comparison-fill pytorch"
+                role="meter"
+                aria-label="PyTorch time relative to the slower result"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              ></div>
+            </div>
+            <strong id="pytorchTime"></strong>
+          </div>
+
+          <p id="performanceSummary" class="performance-summary" aria-live="polite"></p>
+        </div>
+
+        <div class="stat-grid">
           <div class="stat">
             <span class="stat-label">Triton</span>
             <span id="statTriton" class="stat-value">–</span>
@@ -87,11 +144,11 @@
 
         <div class="results-cols">
           <div>
-            <h3>LLM plans</h3>
+            <h3>Optimization attempts</h3>
             <ol id="planList" class="plan-list"></ol>
           </div>
           <div>
-            <h3>Block-size sweep</h3>
+            <h3>Block-size performance</h3>
             <table class="sweep">
               <thead>
                 <tr><th>Block size</th><th>Median ms</th></tr>
@@ -104,7 +161,7 @@
 
       <section class="panel test-panel">
         <div class="panel-head">
-          <h2>Test output</h2>
+          <h2>Diagnostics &amp; Test logs</h2>
           <span id="testBadge" class="result-badge hidden"></span>
         </div>
         <details id="testDetails" open>
