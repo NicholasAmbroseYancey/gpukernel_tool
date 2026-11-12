@@ -96,7 +96,7 @@ class TestMultiOutput(unittest.TestCase):
 class TestLevel3Ops(unittest.TestCase):
     def test_exp_log_sin(self):
         code, _ = compile_expression("exp(x) + log(y)")
-        self.assertIn("tl.exp(x)", code)
+        self.assertIn("_gk_exp(x)", code)
         self.assertIn("tl.log(y)", code)
 
     def test_complex_dsl(self):

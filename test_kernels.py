@@ -76,6 +76,15 @@ SINGLE_EXPRESSIONS = [
     "max(log(x))",
     "min(sqrt(x))",
     "out = x * y",
+    # Triton tensors have no unary +.
+    "+x",
+    "x * +y",
+    # Constant-only math that Triton would evaluate in Python and divide by zero.
+    "atan2(1, 0) + x",
+    "atan2(0, 0) * x",
+    "x + 0 ** -1",
+    # Out-of-range constants are inf in float32, as in the reference.
+    "x * 1e39",
 ]
 
 MULTI_PROGRAMS = [
@@ -145,11 +154,64 @@ def test_atan2_quadrants_and_axes():
     assert torch.allclose(_run_on("atan2(y, x)", x, y), torch.atan2(y, x), atol=1e-5)
 
 
+def test_atan2_signed_zeros_infinities_and_nan():
+    inf, nan = float("inf"), float("nan")
+    values = [0.0, -0.0, 1.0, -1.0, 2.5, -2.5, inf, -inf, nan, 1e-30, -1e-30]
+    grid = torch.tensor([(a, b) for a in values for b in values], device=kernel_device())
+    y, x = grid[:, 0].contiguous(), grid[:, 1].contiguous()
+    for source, expected in [
+        ("atan2(y, x)", torch.atan2(y, x)),
+        ("atan(x)", torch.atan(x)),
+        ("asin(x)", torch.asin(x)),
+        ("acos(x)", torch.acos(x)),
+    ]:
+        out = _run_on(source, x, y)
+        assert torch.allclose(out, expected, atol=1e-6, equal_nan=True), source
+        # atan2(-0.0, -1) is -pi, not pi.
+        same_sign = torch.signbit(out) == torch.signbit(expected)
+        assert (same_sign | expected.isnan()).all(), source
+
+
+def test_negation_keeps_the_sign_of_zero():
+    x = torch.randn(1024, device=kernel_device())
+    # x - x is +0, so -(x - x) is -0 and 1 / -0 is -inf.
+    assert (_run_on("1 / -(x - x)", x, x) == float("-inf")).all()
+
+
+def test_exp_tanh_sigmoid_are_accurate():
+    inf = float("inf")
+    x = torch.linspace(-87.0, 88.0, 4097, device=kernel_device())
+    # tl.exp was up to ~55 ulp off on a GPU; float32 has ~6e-8 per ulp.
+    assert torch.allclose(_run_on("exp(x)", x, x), torch.exp(x), rtol=5e-7, atol=0)
+    assert torch.allclose(_run_on("sigmoid(x)", x, x), torch.sigmoid(x), rtol=5e-7, atol=1e-30)
+    special = torch.tensor([inf, -inf, 89.0, -104.0, 88.7, 0.0], device=kernel_device())
+    assert torch.equal(_run_on("exp(x)", special, special), torch.exp(special))
+    assert _run_on("exp(x)", *[torch.tensor([float("nan")], device=kernel_device())] * 2).isnan().all()
+
+    # 2 * sigmoid(2x) - 1 cancelled to 0 for tanh(1e-8).
+    small = torch.tensor([1e-8, -1e-6, 1e-4, 0.3, -0.6249, 0.6251, 5.0, -20.0, inf, -inf], device=kernel_device())
+    assert torch.allclose(_run_on("tanh(x)", small, small), torch.tanh(small), rtol=5e-7, atol=0)
+
+
 def test_pow_special_cases_match_torch():
     inf, nan = float("inf"), float("nan")
-    b = torch.tensor([1.0, 1.0, -1.0, -1.0, 0.0, 2.0, -2.0, nan, inf, 0.5, -inf, -inf, -inf], device=kernel_device())
-    e = torch.tensor([nan, inf, inf, -inf, 0.0, nan, 3.0, 0.0, -1.0, -inf, 0.5, -0.5, 3.0], device=kernel_device())
-    assert torch.allclose(_run_on("x ** y", b, e), b ** e, equal_nan=True)
+    b = torch.tensor([1.0, 1.0, -1.0, -1.0, 0.0, 2.0, -2.0, nan, inf, 0.5, -inf, -inf, -inf, -0.0, -0.0, -0.0, -0.0, -3.0], device=kernel_device())
+    e = torch.tensor([nan, inf, inf, -inf, 0.0, nan, 3.0, 0.0, -1.0, -inf, 0.5, -0.5, 3.0, -1.0, -2.0, 3.0, 0.5, 0.5], device=kernel_device())
+    out, expected = _run_on("x ** y", b, e), b ** e
+    assert torch.allclose(out, expected, equal_nan=True)
+    # (-0.0) ** -1 is -inf, and (-0.0) ** 3 is -0.0.
+    assert (torch.signbit(out) == torch.signbit(expected))[~expected.isnan()].all()
+
+
+def test_pow_is_accurate():
+    # Rounding e * log2(|b|) in float32 cost up to ~65 ulp (4e-6 relative), so
+    # 10 ** (y ** x) failed verification. torch is within 1 ulp.
+    x = torch.rand(1 << 16, device=kernel_device()) * 4
+    y = torch.randn(1 << 16, device=kernel_device()) * 8
+    expected = (x.double() ** y.double()).float()
+    finite = expected.isfinite() & (expected.abs() > 1e-30)
+    out = _run_on("x ** y", x, y)
+    assert torch.allclose(out[finite], expected[finite], rtol=5e-7, atol=0)
 
 
 def test_division_is_correctly_rounded():

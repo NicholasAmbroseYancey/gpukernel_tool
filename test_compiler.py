@@ -90,7 +90,7 @@ class TestKernelGen(unittest.TestCase):
     def test_emits_triton_ops(self):
         _, program = compile_expression("exp(x) + log(y)")
         code = generate_kernel(program)
-        self.assertIn("tl.exp(x)", code)
+        self.assertIn("_gk_exp(x)", code)
         self.assertIn("tl.log(y)", code)
         self.assertIn("tl.load", code)
         self.assertIn("tl.store", code)
@@ -150,8 +150,36 @@ class TestKernelGen(unittest.TestCase):
     def test_constants_are_float_literals(self):
         # Triton types `2` as int32, which tl.log2/tl.floor/tl.sqrt reject.
         self.assertEqual(emit_triton(IRConst(2.0)), "2.0")
-        self.assertEqual(emit_triton(IRConst(1e20)), "1e+20")
         self.assertEqual(emit_triton(IRConst(float("inf"))), 'float("inf")')
+
+    def test_constants_are_rounded_to_float32(self):
+        # The reference computes in float32: 1e20 is 1.0000000200408773e+20 and
+        # 1e39 is inf. Triton would compute in float64 with an unrounded 1e39.
+        self.assertEqual(emit_triton(IRConst(1e20)), "1.0000000200408773e+20")
+        self.assertEqual(emit_triton(IRConst(1e39)), 'float("inf")')
+        self.assertEqual(emit_triton(IRConst(-1e39)), 'float("-inf")')
+
+    def test_constant_subexpressions_are_folded(self):
+        # Triton would evaluate these in Python and raise ZeroDivisionError.
+        self.assertEqual(_compile_out("atan2(1, 0)"), "out = 1.5707963705062866")
+        self.assertEqual(_compile_out("x + 0 ** -1"), 'out = (x + float("inf"))')
+        self.assertEqual(_compile_out("sqrt(-1) * x"), 'out = (float("nan") * x)')
+        self.assertEqual(_compile_out("x ** (1 / 2)"), "out = tl.sqrt(x)")
+
+    def test_unary_ops_keep_the_sign_of_zero(self):
+        # Triton has no unary + on tensors, and computes -v as 0 - v.
+        self.assertEqual(_compile_out("+x"), "out = x")
+        self.assertEqual(_compile_out("-x"), "out = (x * -1.0)")
+        self.assertEqual(_compile_out("-2 * x"), "out = (-2.0 * x)")
+
+    def test_huge_integer_is_a_parse_error(self):
+        with self.assertRaisesRegex(ParseError, "too large"):
+            parse_expression("x * 1" + "0" * 400)
+
+
+def _compile_out(source):
+    code, _ = compile_expression(source)
+    return next(line.strip() for line in code.splitlines() if line.strip().startswith("out ="))
 
 
 class TestEvaluator(unittest.TestCase):

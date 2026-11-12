@@ -1,6 +1,7 @@
 """Operator and function mapping: Python AST → Triton / PyTorch."""
 
 import math
+import struct
 
 import torch
 
@@ -71,14 +72,15 @@ TRITON_BINOPS = {
 TRITON_FUNCS = {
     "sin": "tl.sin",
     "cos": "tl.cos",
-    # triton.language has no tan/tanh, so build them from ops it does have.
+    # triton.language has no tan, so build it from ops it does have.
     "tan": "(tl.sin({0}) / tl.cos({0}))",
-    "exp": "tl.exp",
+    # tl.exp is up to ~55 ulp off on a GPU, and tl.sigmoid uses it; see triton_helpers.
+    "exp": "_gk_exp",
     "log": "tl.log",
     "sqrt": "tl.sqrt",
     "abs": "tl.abs",
-    "tanh": "(2.0 * tl.sigmoid(2.0 * ({0})) - 1.0)",
-    "sigmoid": "tl.sigmoid",
+    "tanh": "_gk_tanh",
+    "sigmoid": "_gk_sigmoid",
     # PropagateNan.ALL matches torch: NaN in, NaN out (the default drops NaN on GPU).
     "relu": "tl.maximum(0.0, {0}, propagate_nan=tl.PropagateNan.ALL)",
     "max": "tl.maximum({0}, {1}, propagate_nan=tl.PropagateNan.ALL)",
@@ -134,6 +136,15 @@ MATH_FUNCS = {
     "atan": math.atan,
     "atan2": math.atan2,
 }
+
+
+def to_float32(value: float) -> float:
+    """value rounded to float32, as torch.full(..., value, dtype=float32) would
+    store it, except that out-of-range values become +-inf instead of raising."""
+    try:
+        return struct.unpack("f", struct.pack("f", value))[0]
+    except OverflowError:
+        return math.copysign(math.inf, value)
 
 
 def normalize_func(name: str) -> str:
